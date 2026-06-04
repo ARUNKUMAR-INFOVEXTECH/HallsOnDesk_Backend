@@ -1,6 +1,8 @@
 require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
+
+
 const helmet = require("helmet");
 const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./config/swagger");
@@ -32,6 +34,24 @@ app.use(cors());
 app.use(express.json());
 app.use(helmet());
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+
+app.use(cors({
+
+  origin: [
+
+    "http://localhost:3000",
+
+    "https://infovexweddinghallcrm.netlify.app",
+    "https://hallflow2.netlify.app"
+
+  ],
+
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+
+  allowedHeaders: ["Content-Type", "Authorization"],
+
+}));
+
 
 // ---- Existing routes ----
 app.use("/auth",          authRoutes);
