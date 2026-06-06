@@ -27,13 +27,15 @@ module.exports = async (req, res, next) => {
     // Fetch full user profile from our users table using auth_user_id
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("users")
-      .select("id, name, email, role, hall_id, auth_user_id")
+      .select("id, name, email, role, hall_id, auth_user_id, multi_hall_enabled, different_staff_management")
       .eq("auth_user_id", user.id)
       .maybeSingle();
 
     if (profileError) {
       return res.status(500).json({ message: "Error fetching user profile" });
     }
+
+    const activeHallId = req.headers["x-active-hall-id"] || req.headers["x-active-hall-id".toLowerCase()];
 
     if (!profile) {
       // Could be super_admin — check super_admins table
@@ -48,10 +50,47 @@ module.exports = async (req, res, next) => {
       }
 
       req.user = { ...adminProfile, role: "super_admin" };
+      if (activeHallId) {
+        req.user.hall_id = activeHallId;
+      }
       return next();
     }
 
     req.user = profile;
+
+    // Verify and switch dynamic hall context if header provided
+    if (activeHallId) {
+      let canSwitch = false;
+      if (profile.role === "owner" && profile.multi_hall_enabled) {
+        canSwitch = true;
+      } else if (profile.role === "manager" || profile.role === "staff") {
+        // Check if the owner of their primary hall has multi_hall_enabled = true
+        const { data: owner } = await supabaseAdmin
+          .from("users")
+          .select("multi_hall_enabled")
+          .eq("hall_id", profile.hall_id)
+          .eq("role", "owner")
+          .maybeSingle();
+        
+        if (owner && owner.multi_hall_enabled) {
+          canSwitch = true;
+        }
+      }
+
+      if (canSwitch) {
+        const { data: link, error: linkErr } = await supabaseAdmin
+          .from("user_halls")
+          .select("hall_id")
+          .eq("user_id", profile.id)
+          .eq("hall_id", activeHallId)
+          .maybeSingle();
+
+        if (!linkErr && link) {
+          req.user.hall_id = activeHallId;
+        }
+      }
+    }
+
     next();
   } catch (err) {
     return res.status(401).json({ message: "Unauthorized: Token verification failed" });

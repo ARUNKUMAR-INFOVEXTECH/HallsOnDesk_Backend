@@ -74,6 +74,36 @@ const createStaff = async (req, res) => {
       return res.status(500).json({ message: userError.message });
     }
 
+    // ---- 4. Link staff member in user_halls ----
+    try {
+      const isDifferentStaff = req.user.different_staff_management || false;
+      if (isDifferentStaff) {
+        // Link to active hall only
+        await supabaseAdmin.from("user_halls").insert([{
+          user_id: user.id,
+          hall_id: hall_id,
+        }]);
+      } else {
+        // Link to all of the owner's accessible halls
+        const { data: ownerHalls } = await supabaseAdmin
+          .from("user_halls")
+          .select("hall_id")
+          .eq("user_id", req.user.id);
+
+        const links = (ownerHalls || []).map((oh) => ({
+          user_id: user.id,
+          hall_id: oh.hall_id,
+        }));
+
+        if (links.length > 0) {
+          await supabaseAdmin.from("user_halls").insert(links);
+        }
+      }
+    } catch (linkErr) {
+      console.error("Error linking staff in user_halls:", linkErr);
+      // Non-critical
+    }
+
     res.status(201).json({
       message: `Staff created. A confirmation email has been sent to ${email}.`,
       user,

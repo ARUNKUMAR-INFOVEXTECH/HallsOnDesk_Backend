@@ -27,6 +27,7 @@ const enquiryRoutes = require("./routes/enquiryRoutes");
 const invoiceRoutes = require("./routes/invoiceRoutes");
 const notificationRoutes = require("./routes/notificationRoutes");
 const activityLogRoutes = require("./routes/activityLogRoutes");
+const multiHallRoutes = require("./routes/multiHallRoutes");
 
 const app = express();
 
@@ -67,7 +68,8 @@ app.use("/hall/settings", hallSettingsRoutes);
 app.use("/enquiries", enquiryRoutes);
 app.use("/invoices", invoiceRoutes);
 app.use("/notifications", notificationRoutes);
-app.use("/activity-logs", activityLogRoutes);
+app.use("/activity-logs",  activityLogRoutes);
+app.use("/multihall",      multiHallRoutes);
 
 // ---- Health check ----
 app.get("/health", (req, res) => {

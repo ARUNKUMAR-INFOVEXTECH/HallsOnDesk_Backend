@@ -46,7 +46,7 @@ const loginUser = async (req, res) => {
     // Regular user
     const { data: user } = await supabaseAdmin
       .from("users")
-      .select("id, name, email, role, hall_id")
+      .select("id, name, email, role, hall_id, multi_hall_enabled, different_staff_management")
       .eq("auth_user_id", authUserId)
       .maybeSingle();
 
@@ -54,12 +54,25 @@ const loginUser = async (req, res) => {
       return res.status(404).json({ message: "User profile not found" });
     }
 
+    // Fetch accessible halls list
+    const { data: userHalls } = await supabaseAdmin
+      .from("user_halls")
+      .select("marriage_halls ( id, hall_name )")
+      .eq("user_id", user.id);
+
+    const accessibleHalls = (userHalls || [])
+      .map((h) => h.marriage_halls)
+      .filter(Boolean);
+
     return res.json({
       message: "Login successful",
       token: data.session.access_token,
       refresh_token: data.session.refresh_token,
       role: user.role,
-      user,
+      user: {
+        ...user,
+        accessible_halls: accessibleHalls,
+      },
     });
   } catch (err) {
     console.error("loginUser error:", err);
@@ -101,11 +114,34 @@ const refreshToken = async (req, res) => {
    ============================================================ */
 const getProfile = async (req, res) => {
   try {
+    if (req.user.role === "super_admin") {
+      return res.json({
+        message: "Profile fetched successfully",
+        user: {
+          ...req.user,
+          accessible_halls: [],
+        },
+      });
+    }
+
+    const { data: userHalls } = await supabaseAdmin
+      .from("user_halls")
+      .select("marriage_halls ( id, hall_name )")
+      .eq("user_id", req.user.id);
+
+    const accessibleHalls = (userHalls || [])
+      .map((h) => h.marriage_halls)
+      .filter(Boolean);
+
     res.json({
       message: "Profile fetched successfully",
-      user: req.user,
+      user: {
+        ...req.user,
+        accessible_halls: accessibleHalls,
+      },
     });
   } catch (err) {
+    console.error("getProfile error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
