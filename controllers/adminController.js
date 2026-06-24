@@ -23,13 +23,12 @@ const createHall = async (req, res) => {
 
   if (hallError) return res.status(500).json({ message: hallError.message });
 
-  // 2. Create Supabase Auth user
-  const { data: authData, error: authError } = await supabase.auth.signUp({
+  // 2. Create Supabase Auth user via admin client (bypasses SMTP setup dependency)
+  const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
     email: owner_email,
     password,
-    options: {
-      data: { name: owner_name, role: "owner", hall_id: hall.id },
-    },
+    email_confirm: true,
+    user_metadata: { name: owner_name, role: "owner", hall_id: hall.id }
   });
 
   if (authError || !authData?.user) {
@@ -72,8 +71,33 @@ const createHall = async (req, res) => {
   // 5. Update hall with owner email
   await supabaseAdmin.from("marriage_halls").update({ email: owner_email }).eq("id", hall.id);
 
+  // Send the welcome email using the custom email helper
+  try {
+    const { data: pkgData } = await supabaseAdmin
+      .from("packages")
+      .select("name")
+      .eq("id", package_id)
+      .single();
+
+    const packageName = pkgData?.name || "Premium Plan";
+
+    const { sendHallOwnerEmail } = require("../utils/emailHelper");
+    await sendHallOwnerEmail({
+      to: owner_email,
+      owner_name,
+      hall_name,
+      city: city || "N/A",
+      package_name: packageName,
+      temp_password: password,
+      verification_link: "https://hallsondesk.vercel.app/login"
+    });
+  } catch (emailErr) {
+    console.error("Error sending hall owner welcome email:", emailErr.message);
+    // Non-blocking
+  }
+
   res.status(201).json({
-    message: "Hall created successfully. A confirmation email has been sent to the owner.",
+    message: "Hall created successfully. A welcome email has been sent to the owner.",
     hall_id: hall.id,
     owner_email,
   });

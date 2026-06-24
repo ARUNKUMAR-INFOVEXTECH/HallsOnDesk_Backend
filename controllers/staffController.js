@@ -80,13 +80,12 @@ const createStaff = async (req, res) => {
       }
     }
 
-    // ---- 2. Create Supabase Auth user via signUp (auto-sends confirmation email) ----
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    // ---- 2. Create Supabase Auth user via admin client (bypasses SMTP setup dependency) ----
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      options: {
-        data: { name, role: staffRole, hall_id },
-      },
+      email_confirm: true,
+      user_metadata: { name, role: staffRole, hall_id },
     });
 
     if (authError || !authData?.user) {
@@ -184,8 +183,32 @@ const createStaff = async (req, res) => {
       metadata: { employee_id: user.employee_id, role: staffRole, department }
     });
 
+    // Send staff welcome/verification email using the custom email helper
+    try {
+      const { data: hallData } = await supabaseAdmin
+        .from("marriage_halls")
+        .select("hall_name")
+        .eq("id", hall_id)
+        .single();
+      const hallName = hallData?.hall_name || "Infovex Halls";
+
+      const { sendStaffEmail } = require("../utils/emailHelper");
+      await sendStaffEmail({
+        to: email,
+        staff_name: name,
+        hall_name: hallName,
+        role: staffRole,
+        temp_password: password,
+        verification_link: "https://hallsondesk.vercel.app/login",
+        owner_name: req.user.name || "Administrator"
+      });
+    } catch (emailErr) {
+      console.error("Error sending staff welcome email:", emailErr.message);
+      // Non-critical
+    }
+
     res.status(201).json({
-      message: `Staff created. A confirmation email has been sent to ${email}.`,
+      message: `Staff created. A welcome email has been sent to ${email}.`,
       user,
     });
   } catch (err) {
