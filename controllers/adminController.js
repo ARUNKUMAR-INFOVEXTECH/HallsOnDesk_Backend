@@ -1,4 +1,5 @@
 const { supabase, supabaseAdmin } = require("../config/supabase");
+const { getLocalDate } = require("../utils/dateHelper");
 const { createNotification } = require("./notificationController");
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -14,6 +15,27 @@ const createHall = async (req, res) => {
     });
   }
 
+  // Check if email is already in use
+  const { data: existingUser } = await supabaseAdmin
+    .from("users")
+    .select("id")
+    .eq("email", owner_email)
+    .maybeSingle();
+
+  if (existingUser) {
+    return res.status(400).json({ message: "Email is already registered" });
+  }
+
+  const { data: existingAdmin } = await supabaseAdmin
+    .from("super_admins")
+    .select("id")
+    .eq("email", owner_email)
+    .maybeSingle();
+
+  if (existingAdmin) {
+    return res.status(400).json({ message: "Email is already registered as an administrator" });
+  }
+
   // 1. Create hall
   const { data: hall, error: hallError } = await supabaseAdmin
     .from("marriage_halls")
@@ -23,14 +45,12 @@ const createHall = async (req, res) => {
 
   if (hallError) return res.status(500).json({ message: hallError.message });
 
-  // 2. Create Supabase Auth user via signUp (auto-sends confirmation email configured in Supabase)
-  const { data: authData, error: authError } = await supabase.auth.signUp({
+  // 2. Create Supabase Auth user directly via admin client (email confirmation is disabled)
+  const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
     email: owner_email,
     password,
-    options: {
-      data: { name: owner_name, role: "owner", hall_id: hall.id },
-      emailRedirectTo: "https://hallsondesk.vercel.app/login"
-    },
+    email_confirm: true,
+    user_metadata: { name: owner_name, role: "owner", hall_id: hall.id }
   });
 
   if (authError || !authData?.user) {
@@ -39,6 +59,9 @@ const createHall = async (req, res) => {
   }
 
   // 3. Create user profile
+  const cryptoHelper = require("../utils/cryptoHelper");
+  const backup_password_enc = cryptoHelper.encrypt(password);
+
   const { error: userError } = await supabaseAdmin.from("users").insert([{
     name: owner_name,
     email: owner_email,
@@ -46,6 +69,7 @@ const createHall = async (req, res) => {
     role: "owner",
     hall_id: hall.id,
     auth_user_id: authData.user.id,
+    backup_password_enc,
   }]);
 
   if (userError) {
@@ -62,8 +86,8 @@ const createHall = async (req, res) => {
   const { error: subError } = await supabaseAdmin.from("hall_subscriptions").insert([{
     hall_id: hall.id,
     package_id,
-    start_date: startDate.toISOString().split("T")[0],
-    end_date: endDate.toISOString().split("T")[0],
+    start_date: getLocalDate(startDate),
+    end_date: getLocalDate(endDate),
     status: "active",
     payment_status: "pending",
   }]);
@@ -74,7 +98,7 @@ const createHall = async (req, res) => {
   await supabaseAdmin.from("marriage_halls").update({ email: owner_email }).eq("id", hall.id);
 
   res.status(201).json({
-    message: "Hall created successfully. A confirmation email has been sent to the owner.",
+    message: "Hall created successfully.",
     hall_id: hall.id,
     owner_email,
   });
@@ -95,11 +119,24 @@ const getHallById = async (req, res) => {
 
   const { data, error } = await supabaseAdmin
     .from("marriage_halls")
-    .select(`*, hall_subscriptions ( id, status, start_date, end_date, payment_status, packages ( name, price, billing_cycle, features ) ), users ( id, name, email, role, created_at )`)
+    .select(`*, hall_subscriptions ( id, status, start_date, end_date, payment_status, packages ( name, price, billing_cycle, features ) ), users ( id, name, email, role, created_at, backup_password_enc )`)
     .eq("id", id)
     .single();
 
   if (error) return res.status(404).json({ message: "Hall not found" });
+
+  if (data && data.users && Array.isArray(data.users)) {
+    const cryptoHelper = require("../utils/cryptoHelper");
+    data.users = data.users.map(u => {
+      const decrypted = u.backup_password_enc ? cryptoHelper.decrypt(u.backup_password_enc) : null;
+      return {
+        ...u,
+        backupPassword: decrypted,
+        backup_password_enc: undefined
+      };
+    });
+  }
+
   res.json(data);
 };
 
@@ -119,7 +156,7 @@ const activateHall = async (req, res) => {
   const { error } = await supabaseAdmin.from("marriage_halls").update({ status: "active" }).eq("id", id);
   if (error) return res.status(500).json({ message: error.message });
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = getLocalDate();
   await supabaseAdmin.from("hall_subscriptions").update({ status: "active" }).eq("hall_id", id).gte("end_date", today);
   res.json({ message: "Hall activated successfully" });
 };
@@ -150,16 +187,16 @@ const deleteHall = async (req, res) => {
 const getAdminDashboardStats = async (req, res) => {
   try {
     const now = new Date();
-    const today = now.toISOString().split("T")[0];
+    const today = getLocalDate(now);
 
     const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0); // last day of prev month
 
-    const startOfYear = new Date(now.getFullYear(), 0, 1).toISOString().split("T")[0];
-    const startOfThisMonthStr = startOfThisMonth.toISOString().split("T")[0];
-    const startOfLastMonthStr = startOfLastMonth.toISOString().split("T")[0];
-    const endOfLastMonthStr = endOfLastMonth.toISOString().split("T")[0];
+    const startOfYear = getLocalDate(new Date(now.getFullYear(), 0, 1));
+    const startOfThisMonthStr = getLocalDate(startOfThisMonth);
+    const startOfLastMonthStr = getLocalDate(startOfLastMonth);
+    const endOfLastMonthStr = getLocalDate(endOfLastMonth);
 
     let databaseStatus = "healthy";
 
@@ -334,7 +371,7 @@ const getAdminAnalytics = async (req, res) => {
     } else {
       startDate = new Date(now.getTime() - 30 * 86400 * 1000);
     }
-    const startDateStr = startDate.toISOString().split("T")[0];
+    const startDateStr = getLocalDate(startDate);
 
     // Parallel fetches
     const [hallsRes, subsRes, allPaymentsRes, hallPaymentsRes, hallsWithSubsRes] = await Promise.all([
@@ -653,11 +690,12 @@ const getAdminUsers = async (req, res) => {
   try {
     const { data: users, error } = await supabaseAdmin
       .from("users")
-      .select("id, name, email, role, status, created_at, phone, marriage_halls(hall_name)")
+      .select("id, name, email, role, status, created_at, phone, backup_password_enc, marriage_halls(hall_name)")
       .order("created_at", { ascending: false });
 
     if (error) return res.status(500).json({ message: error.message });
 
+    const cryptoHelper = require("../utils/cryptoHelper");
     const formatted = (users || []).map((u) => ({
       id: u.id,
       name: u.name,
@@ -667,6 +705,7 @@ const getAdminUsers = async (req, res) => {
       phone: u.phone || "N/A",
       lastLogin: u.created_at,
       hallName: u.marriage_halls?.hall_name || "Shared Workspace / Admin",
+      backupPassword: u.backup_password_enc ? cryptoHelper.decrypt(u.backup_password_enc) : null,
     }));
 
     res.json(formatted);
@@ -752,7 +791,7 @@ const getAdminSettings = async (req, res) => {
         nextInvoiceNumber: 1,
         emailTemplates: {
           welcome:
-            "Hello {{owner_name}},\n\nWelcome to HallsOnDesk! Your account has been set up successfully.",
+            "Hello {{owner_name}},\n\nWelcome to Infovex Halls! Your account has been set up successfully.",
           trialExpiring:
             "Hi {{owner_name}},\n\nYour free trial is expiring in 3 days.",
           paymentSuccess:
@@ -1013,7 +1052,7 @@ const verifySubscriptionPayment = async (req, res) => {
         .limit(1)
         .maybeSingle();
 
-      const todayStr = today.toISOString().split("T")[0];
+      const todayStr = getLocalDate(today);
       if (activeSub && (activeSub.status === "active" || activeSub.status === "trial") && activeSub.end_date >= todayStr) {
         // Extend from the current end date
         newEndDate = new Date(activeSub.end_date);
@@ -1028,7 +1067,7 @@ const verifySubscriptionPayment = async (req, res) => {
       }
 
       const startDateStr = todayStr;
-      const endDateStr = newEndDate.toISOString().split("T")[0];
+      const endDateStr = getLocalDate(newEndDate);
 
       // Update payment
       const { error: updPayErr } = await supabaseAdmin

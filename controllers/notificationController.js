@@ -1,4 +1,5 @@
 const { supabaseAdmin } = require("../config/supabase");
+const { getLocalDate } = require("../utils/dateHelper");
 
 /*
   Notification types used across the system:
@@ -48,7 +49,7 @@ const getNotifications = async (req, res) => {
     // Automatically generate billing reminders for owners dynamically when retrieving notifications
     if (!isSuperAdmin && hall_id) {
       try {
-        const todayStr = new Date().toISOString().split("T")[0];
+        const todayStr = getLocalDate();
         // Fetch active/trial subscription for this hall
         const { data: activeSub } = await supabaseAdmin
           .from("hall_subscriptions")
@@ -63,7 +64,8 @@ const getNotifications = async (req, res) => {
         if (activeSub && activeSub.end_date) {
           const today = new Date();
           today.setHours(0, 0, 0, 0);
-          const endDate = new Date(activeSub.end_date);
+          const [yr, mo, dy] = activeSub.end_date.split("-").map(Number);
+          const endDate = new Date(yr, mo - 1, dy);
           endDate.setHours(0, 0, 0, 0);
 
           const diffTime = endDate.getTime() - today.getTime();
@@ -314,15 +316,15 @@ const clearReadNotifications = async (req, res) => {
 const generateSystemNotifications = async (req, res) => {
   try {
     const today = new Date();
-    const todayStr = today.toISOString().split("T")[0];
+    const todayStr = getLocalDate(today);
 
     const tomorrow = new Date(today);
     tomorrow.setDate(today.getDate() + 1);
-    const tomorrowStr = tomorrow.toISOString().split("T")[0];
+    const tomorrowStr = getLocalDate(tomorrow);
 
     const sevenDaysLater = new Date(today);
     sevenDaysLater.setDate(today.getDate() + 7);
-    const sevenDaysStr = sevenDaysLater.toISOString().split("T")[0];
+    const sevenDaysStr = getLocalDate(sevenDaysLater);
 
     let generated = 0;
 

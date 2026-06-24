@@ -47,6 +47,27 @@ const createStaff = async (req, res) => {
       return res.status(400).json({ message: "name, email, and password are required" });
     }
 
+    // Check if email already in use
+    const { data: existingUser } = await supabaseAdmin
+      .from("users")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (existingUser) {
+      return res.status(400).json({ message: "Email is already registered" });
+    }
+
+    const { data: existingAdmin } = await supabaseAdmin
+      .from("super_admins")
+      .select("id")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (existingAdmin) {
+      return res.status(400).json({ message: "Email is already registered as an administrator" });
+    }
+
     const allowedRoles = ["manager", "staff"];
     const staffRole = allowedRoles.includes(role) ? role : "staff";
 
@@ -80,14 +101,12 @@ const createStaff = async (req, res) => {
       }
     }
 
-    // ---- 2. Create Supabase Auth user via signUp (auto-sends confirmation email configured in Supabase) ----
-    const { data: authData, error: authError } = await supabase.auth.signUp({
+    // ---- 2. Create Supabase Auth user directly via admin client (email confirmation is disabled) ----
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      options: {
-        data: { name, role: staffRole, hall_id },
-        emailRedirectTo: "https://hallsondesk.vercel.app/login"
-      },
+      email_confirm: true,
+      user_metadata: { name, role: staffRole, hall_id }
     });
 
     if (authError || !authData?.user) {
@@ -96,6 +115,8 @@ const createStaff = async (req, res) => {
 
     // ---- 3. Insert into users table ----
     const columns = await getUsersColumns();
+    const cryptoHelper = require("../utils/cryptoHelper");
+    const backup_password_enc = cryptoHelper.encrypt(password);
     
     const insertPayload = {
       name,
@@ -125,10 +146,11 @@ const createStaff = async (req, res) => {
     addIfSupported("status", status || "active");
     addIfSupported("permissions", permissions || []);
     addIfSupported("notes", notes || null);
+    addIfSupported("backup_password_enc", backup_password_enc);
 
     const selectFields = columns
       ? ["id", "name", "email", "role", "hall_id", "created_at"].concat(
-          ["phone", "department", "employee_id", "joining_date", "salary", "address", "city", "state", "emergency_contact_name", "emergency_contact_phone", "status", "permissions", "notes"].filter(f => columns.includes(f))
+          ["phone", "department", "employee_id", "joining_date", "salary", "address", "city", "state", "emergency_contact_name", "emergency_contact_phone", "status", "permissions", "notes", "backup_password_enc"].filter(f => columns.includes(f))
         ).join(", ")
       : "id, name, email, role, hall_id, created_at";
 
@@ -186,7 +208,7 @@ const createStaff = async (req, res) => {
     });
 
     res.status(201).json({
-      message: `Staff created. A confirmation email has been sent to ${email}.`,
+      message: "Staff created successfully.",
       user,
     });
   } catch (err) {
@@ -205,7 +227,7 @@ const getStaff = async (req, res) => {
       "id", "hall_id", "name", "email", "phone", "role", "department",
       "employee_id", "joining_date", "salary", "address", "city", "state",
       "emergency_contact_name", "emergency_contact_phone", "status",
-      "permissions", "notes", "created_at", "updated_at"
+      "permissions", "notes", "created_at", "updated_at", "backup_password_enc"
     ];
     const selectFields = columns
       ? requestedFields.filter(f => columns.includes(f)).join(", ")
@@ -241,7 +263,18 @@ const getStaff = async (req, res) => {
     const { data, error } = await query;
 
     if (error) return res.status(500).json({ message: error.message });
-    res.json(data);
+
+    const cryptoHelper = require("../utils/cryptoHelper");
+    const decryptedData = (data || []).map((u) => {
+      const decrypted = u.backup_password_enc ? cryptoHelper.decrypt(u.backup_password_enc) : null;
+      return {
+        ...u,
+        backupPassword: decrypted,
+        backup_password_enc: undefined
+      };
+    });
+
+    res.json(decryptedData);
   } catch (err) {
     console.error("getStaff error:", err);
     res.status(500).json({ message: "Server error" });

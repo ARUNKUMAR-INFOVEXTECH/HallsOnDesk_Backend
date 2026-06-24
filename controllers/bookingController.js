@@ -1,5 +1,39 @@
 const { supabaseAdmin } = require("../config/supabase");
 const { logActivity } = require("./activityLogController");
+const { getLocalDate } = require("../utils/dateHelper");
+
+/* ============================================================
+   AVAILABILITY CHECK (reusable helper)
+   ============================================================ */
+const extractDate = (dateTimeStr) => {
+  if (!dateTimeStr) return null;
+  return dateTimeStr.split(/[T\s]/)[0];
+};
+
+const extractTime = (dateTimeStr, defaultTime) => {
+  if (!dateTimeStr) return defaultTime;
+  const parts = dateTimeStr.split(/[T\s]/);
+  if (parts.length > 1) {
+    let timePart = parts[1];
+    timePart = timePart.split(/[Z+-]/)[0];
+    if (timePart.length === 5) timePart = `${timePart}:00`;
+    return timePart;
+  }
+  return defaultTime;
+};
+
+const normalizeBookingDates = (start, end) => {
+  let normalizedStart = start;
+  let normalizedEnd = end || start;
+  
+  if (normalizedStart && normalizedStart.length === 10 && /^\d{4}-\d{2}-\d{2}$/.test(normalizedStart)) {
+    normalizedStart = `${normalizedStart} 00:00:00`;
+  }
+  if (normalizedEnd && normalizedEnd.length === 10 && /^\d{4}-\d{2}-\d{2}$/.test(normalizedEnd)) {
+    normalizedEnd = `${normalizedEnd} 23:59:59`;
+  }
+  return { start: normalizedStart, end: normalizedEnd };
+};
 
 /* ============================================================
    AVAILABILITY CHECK (reusable helper)
@@ -10,9 +44,8 @@ const checkDateAvailability = async (hall_id, start_date, end_date, excludeBooki
     .select("id, event_name, start_date, end_date, status")
     .eq("hall_id", hall_id)
     .neq("status", "cancelled")
-    .or(`start_date.lte.${end_date},end_date.gte.${start_date}`)
-    .filter("start_date", "lte", end_date)
-    .filter("end_date", "gte", start_date);
+    .lt("start_date", end_date)
+    .gt("end_date", start_date);
 
   if (excludeBookingId) {
     query = query.neq("id", excludeBookingId);
@@ -29,17 +62,19 @@ const checkDateAvailability = async (hall_id, start_date, end_date, excludeBooki
 const checkAvailability = async (req, res) => {
   try {
     const hall_id = req.user.hall_id;
-    const { start_date, end_date } = req.query;
+    const { start_date, end_date, exclude_booking_id } = req.query;
 
     if (!start_date || !end_date) {
       return res.status(400).json({ message: "start_date and end_date are required" });
     }
 
-    if (new Date(start_date) > new Date(end_date)) {
+    const { start: finalStartDate, end: finalEndDate } = normalizeBookingDates(start_date, end_date);
+
+    if (new Date(finalStartDate) > new Date(finalEndDate)) {
       return res.status(400).json({ message: "start_date cannot be after end_date" });
     }
 
-    const conflicts = await checkDateAvailability(hall_id, start_date, end_date);
+    const conflicts = await checkDateAvailability(hall_id, finalStartDate, finalEndDate, exclude_booking_id || null);
 
     res.json({
       available: conflicts.length === 0,
@@ -80,7 +115,9 @@ const createBooking = async (req, res) => {
       return res.status(400).json({ message: "customer_id, start_date, and end_date are required" });
     }
 
-    if (new Date(start_date) > new Date(end_date)) {
+    const { start: finalStartDate, end: finalEndDate } = normalizeBookingDates(start_date, end_date);
+
+    if (new Date(finalStartDate) > new Date(finalEndDate)) {
       return res.status(400).json({ message: "start_date cannot be after end_date" });
     }
 
@@ -95,7 +132,7 @@ const createBooking = async (req, res) => {
     if (!customer) return res.status(404).json({ message: "Customer not found in your hall" });
 
     // ---- Check subscription booking limit ----
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDate();
     const { data: sub } = await supabaseAdmin
       .from("hall_subscriptions")
       .select("package_id, packages(max_bookings, name)")
@@ -118,8 +155,8 @@ const createBooking = async (req, res) => {
       }
     }
 
-    // ---- CRITICAL: Check double booking ----
-    const conflicts = await checkDateAvailability(hall_id, start_date, end_date);
+    // ---- Check double booking ----
+    const conflicts = await checkDateAvailability(hall_id, finalStartDate, finalEndDate);
     if (conflicts.length > 0) {
       return res.status(409).json({
         message: "Hall is already booked for the selected dates",
@@ -141,8 +178,8 @@ const createBooking = async (req, res) => {
         booking_number,
         event_name,
         event_type,
-        start_date,
-        end_date,
+        start_date: finalStartDate,
+        end_date: finalEndDate,
         total_amount: total_amount || 0,
         advance_amount: advance_amount || 0,
         status: "confirmed",
@@ -166,9 +203,11 @@ const createBooking = async (req, res) => {
       hall_id,
       booking_id: data.id,
       event_title: event_name || "Booking",
-      event_date: start_date,
-      start_time: "09:00:00",
-      end_time: "21:00:00",
+      event_date: extractDate(finalStartDate),
+      end_date: extractDate(finalEndDate),
+      start_time: extractTime(finalStartDate, "09:00:00"),
+      end_time: extractTime(finalEndDate, "21:00:00"),
+      all_day: start_date.length <= 10,
     }]);
 
     // ---- If advance paid, record payment ----
@@ -345,8 +384,18 @@ const updateBooking = async (req, res) => {
     }
 
     // Check date conflicts if dates are being changed
-    const newStart = start_date || existing.start_date;
-    const newEnd = end_date || existing.end_date;
+    let finalStartDate = start_date;
+    let finalEndDate = end_date;
+
+    if (finalStartDate && finalStartDate.length === 10 && /^\d{4}-\d{2}-\d{2}$/.test(finalStartDate)) {
+      finalStartDate = `${finalStartDate} 00:00:00`;
+    }
+    if (finalEndDate && finalEndDate.length === 10 && /^\d{4}-\d{2}-\d{2}$/.test(finalEndDate)) {
+      finalEndDate = `${finalEndDate} 23:59:59`;
+    }
+
+    const newStart = finalStartDate || existing.start_date;
+    const newEnd = finalEndDate || existing.end_date;
 
     if (start_date || end_date) {
       if (new Date(newStart) > new Date(newEnd)) {
@@ -365,8 +414,8 @@ const updateBooking = async (req, res) => {
     const updates = {};
     if (event_name !== undefined) updates.event_name = event_name;
     if (event_type !== undefined) updates.event_type = event_type;
-    if (start_date !== undefined) updates.start_date = start_date;
-    if (end_date !== undefined) updates.end_date = end_date;
+    if (start_date !== undefined) updates.start_date = finalStartDate;
+    if (end_date !== undefined) updates.end_date = finalEndDate;
     if (total_amount !== undefined) updates.total_amount = total_amount;
     if (status !== undefined) updates.status = status;
     if (notes !== undefined) updates.notes = notes;
@@ -380,10 +429,22 @@ const updateBooking = async (req, res) => {
     if (error) return res.status(500).json({ message: error.message });
 
     // Sync calendar event if dates changed
-    if (start_date || event_name) {
+    if (start_date || end_date || event_name) {
       const calendarUpdate = {};
-      if (start_date) calendarUpdate.event_date = newStart;
-      if (event_name) calendarUpdate.event_title = event_name;
+      if (start_date) {
+        calendarUpdate.event_date = extractDate(newStart);
+        calendarUpdate.start_time = extractTime(newStart, "09:00:00");
+      }
+      if (end_date) {
+        calendarUpdate.end_date = extractDate(newEnd);
+        calendarUpdate.end_time = extractTime(newEnd, "21:00:00");
+      }
+      if (event_name) {
+        calendarUpdate.event_title = event_name;
+      }
+      if (start_date) {
+        calendarUpdate.all_day = start_date.length <= 10;
+      }
       await supabaseAdmin.from("events").update(calendarUpdate).eq("booking_id", id);
     }
 

@@ -1,7 +1,8 @@
 const { supabaseAdmin } = require("../config/supabase");
+const { getLocalDate } = require("../utils/dateHelper");
 
 const isSubscriptionValid = async (userId, hallId, primaryHallId) => {
-  const today = new Date().toISOString().split("T")[0];
+  const today = getLocalDate();
   const targetHallId = primaryHallId || hallId;
   
   if (!targetHallId || targetHallId === "all") {
@@ -49,9 +50,8 @@ const isSubscriptionValid = async (userId, hallId, primaryHallId) => {
 const getDashboard = async (req, res) => {
   try {
     const hall_id = req.user.hall_id;
-    const today = new Date().toISOString().split("T")[0];
-    const firstOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1)
-      .toISOString().split("T")[0];
+    const today = getLocalDate();
+    const firstOfMonth = getLocalDate(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 
     let hallIds = [hall_id];
     let subscriptionHallId = req.user.primary_hall_id || hall_id;
@@ -212,7 +212,7 @@ const getDashboard = async (req, res) => {
     // 4. Calculate Growth Rate MoM (Comparing this month's payments vs last month's payments)
     const now = new Date();
     const firstOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-    const firstOfLastMonthStr = firstOfLastMonth.toISOString().split("T")[0];
+    const firstOfLastMonthStr = getLocalDate(firstOfLastMonth);
 
     const lastMonthPayments = completedPayments.filter(p => p.payment_date >= firstOfLastMonthStr && p.payment_date < firstOfMonth);
     const lastMonthRevenue = lastMonthPayments.reduce((s, p) => s + (p.amount || 0), 0);

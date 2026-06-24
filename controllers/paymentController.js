@@ -1,5 +1,6 @@
 const { supabaseAdmin } = require("../config/supabase");
 const { logActivity } = require("./activityLogController");
+const { getLocalDate } = require("../utils/dateHelper");
 
 /* ============================================================
    ADD PAYMENT
@@ -47,7 +48,7 @@ const createPayment = async (req, res) => {
         booking_id,
         amount,
         payment_method: payment_method || "cash",
-        payment_date: payment_date || new Date().toISOString().split("T")[0],
+        payment_date: payment_date || getLocalDate(),
         notes,
       }])
       .select()

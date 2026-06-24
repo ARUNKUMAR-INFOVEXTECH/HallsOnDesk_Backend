@@ -1,5 +1,6 @@
 const { supabaseAdmin } = require("../config/supabase");
 const { getSettingsForHall } = require("./hallSettingsController");
+const { getLocalDate } = require("../utils/dateHelper");
 
 /* ============================================================
    GENERATE NEXT INVOICE NUMBER
@@ -103,7 +104,7 @@ const createInvoice = async (req, res) => {
       hall_id,
       booking_id,
       invoice_number: invoiceNumber,
-      invoice_date: new Date().toISOString().split("T")[0],
+      invoice_date: getLocalDate(),
       due_date: due_date || null,
 
       // Customer snapshot
@@ -319,7 +320,7 @@ const getInvoiceHtml = async (req, res) => {
     if (error) return res.status(404).json({ message: "Invoice not found" });
 
     // Fetch active subscription, template settings, and bank details from profile
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDate();
     const [subRes, settingsRes, profileRes] = await Promise.all([
       supabaseAdmin
         .from("hall_subscriptions")

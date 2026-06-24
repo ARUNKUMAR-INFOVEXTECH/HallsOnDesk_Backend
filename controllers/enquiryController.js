@@ -1,5 +1,6 @@
 const { supabaseAdmin } = require("../config/supabase");
 const { logActivity } = require("./activityLogController");
+const { getLocalDate } = require("../utils/dateHelper");
 
 /*
   Enquiry pipeline (Aligned with Frontend):
@@ -104,7 +105,7 @@ const syncEnquiryFollowups = async (enquiry_id, hall_id, user_id, user_name, fol
     const rowData = {
       enquiry_id,
       hall_id,
-      followup_date: followup_date_val ? followup_date_val.split("T")[0] : new Date().toISOString().split("T")[0],
+      followup_date: followup_date_val ? followup_date_val.split("T")[0] : getLocalDate(),
       method: method_val,
       notes: notes_val,
       outcome_notes: outcome_notes_val,
@@ -193,7 +194,7 @@ const createEnquiry = async (req, res) => {
       } else {
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
-        followup_date_val = tomorrow.toISOString().split("T")[0];
+        followup_date_val = getLocalDate(tomorrow);
       }
 
       await supabaseAdmin.from("enquiry_followups").insert([{
@@ -495,11 +496,11 @@ const convertToBooking = async (req, res) => {
     const hall_id = req.user.hall_id;
     // Handle camelCase values sent from frontend mapping in convertFormSchema
     const event_date = req.body.eventDate || req.body.event_date;
-    const hall_section = req.body.hallSection || req.body.hall_section || "Main Hall";
     const total_amount = req.body.bookingAmount || req.body.booking_amount || req.body.total_amount;
     const advance_amount = req.body.advanceAmount || req.body.advance_amount || 0;
+    const guest_count = req.body.guestCount || req.body.guest_count || null;
     const notes = req.body.notes || "";
-    const event_name = req.body.event_name || req.body.eventName || `${hall_section} - Event`;
+    const event_name = req.body.event_name || req.body.eventName || "Event";
 
     if (!event_date) {
       return res.status(400).json({ message: "eventDate (or event_date) is required" });
@@ -568,7 +569,7 @@ const convertToBooking = async (req, res) => {
     }
 
     // Create booking with extra frontend fields (hall_section, guest_count, discount_amount = 0)
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDate();
     const { data: booking, error: bookingErr } = await supabaseAdmin
       .from("bookings")
       .insert([{
@@ -582,8 +583,8 @@ const convertToBooking = async (req, res) => {
         advance_amount: advance_amount || 0,
         status: "confirmed",
         notes: notes || enquiry.notes,
-        hall_section: hall_section,
-        guest_count: enquiry.guest_count || 100,
+        hall_section: "Main Hall",
+        guest_count: guest_count || enquiry.guest_count || 100,
         discount_amount: 0.00,
       }])
       .select()
@@ -836,7 +837,7 @@ const getFollowups = async (req, res) => {
 const getTodaysFollowups = async (req, res) => {
   try {
     const hall_id = req.user.hall_id;
-    const today = new Date().toISOString().split("T")[0];
+    const today = getLocalDate();
 
     const { data, error } = await supabaseAdmin
       .from("enquiry_followups")

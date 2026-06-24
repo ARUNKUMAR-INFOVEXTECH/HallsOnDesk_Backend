@@ -5,6 +5,7 @@
 
 // Simple regex to check ISO Date formats (e.g. YYYY-MM-DD)
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+const DATETIME_REGEX = /^\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2}(?:\.\d{3})?)?)?(?:Z|[+-]\d{2}:?\d{2})?$/;
 
 // Helper to return validation error response
 const sendErrors = (res, errors) => {
@@ -45,14 +46,14 @@ const validateBooking = (req, res, next) => {
   }
 
   if (start_date) {
-    if (typeof start_date !== "string" || !DATE_REGEX.test(start_date) || isNaN(Date.parse(start_date))) {
-      errors.push("start_date must be a valid date string in YYYY-MM-DD format");
+    if (typeof start_date !== "string" || !DATETIME_REGEX.test(start_date) || isNaN(Date.parse(start_date))) {
+      errors.push("start_date must be a valid datetime string");
     }
   }
 
   if (end_date) {
-    if (typeof end_date !== "string" || !DATE_REGEX.test(end_date) || isNaN(Date.parse(end_date))) {
-      errors.push("end_date must be a valid date string in YYYY-MM-DD format");
+    if (typeof end_date !== "string" || !DATETIME_REGEX.test(end_date) || isNaN(Date.parse(end_date))) {
+      errors.push("end_date must be a valid datetime string");
     }
   }
 
