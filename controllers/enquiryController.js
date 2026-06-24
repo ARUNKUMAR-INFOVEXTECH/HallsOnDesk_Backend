@@ -568,6 +568,22 @@ const convertToBooking = async (req, res) => {
       customer_id = newCustomer.id;
     }
 
+    // Resolve GST & Tax Settings
+    const { getSettingsForHall } = require("./hallSettingsController");
+    const settings = await getSettingsForHall(hall_id);
+
+    const finalTaxEnabled = settings.tax_enabled || false;
+    const finalTaxPercentage = settings.tax_percentage || 0;
+    const finalSubtotal = Number(total_amount || 0);
+    const finalDiscount = 0.00;
+
+    const taxableAmount = finalSubtotal - finalDiscount;
+    const finalTaxAmount = finalTaxEnabled
+      ? Math.round((taxableAmount * finalTaxPercentage) / 100 * 100) / 100
+      : 0;
+
+    const finalTotalAmount = taxableAmount + finalTaxAmount;
+
     // Create booking with extra frontend fields (hall_section, guest_count, discount_amount = 0)
     const today = getLocalDate();
     const { data: booking, error: bookingErr } = await supabaseAdmin
@@ -579,13 +595,17 @@ const convertToBooking = async (req, res) => {
         event_type: enquiry.event_type,
         start_date,
         end_date,
-        total_amount: total_amount || 0,
+        subtotal: finalSubtotal,
+        tax_enabled: finalTaxEnabled,
+        tax_percentage: finalTaxPercentage,
+        tax_amount: finalTaxAmount,
+        discount_amount: finalDiscount,
+        total_amount: finalTotalAmount,
         advance_amount: advance_amount || 0,
         status: "confirmed",
         notes: notes || enquiry.notes,
         hall_section: "Main Hall",
         guest_count: guest_count || enquiry.guest_count || 100,
-        discount_amount: 0.00,
       }])
       .select()
       .single();

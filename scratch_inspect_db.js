@@ -15,12 +15,12 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
 
 async function inspect() {
   try {
-    const { data, error } = await supabaseAdmin.from("enquiry_followups").select("*").limit(1);
+    const { data, error } = await supabaseAdmin.from("bookings").select("*").limit(1);
 
     if (error) {
       console.error("Query error:", error);
     } else {
-      console.log("Followup columns in DB:", Object.keys(data[0] || {}));
+      console.log("bookings columns in DB:", data.length > 0 ? Object.keys(data[0]) : "No records found");
     }
   } catch (err) {
     console.error("Exception:", err);

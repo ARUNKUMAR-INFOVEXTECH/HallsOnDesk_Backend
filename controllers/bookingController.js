@@ -131,6 +131,26 @@ const createBooking = async (req, res) => {
 
     if (!customer) return res.status(404).json({ message: "Customer not found in your hall" });
 
+    // ---- Resolve GST & Tax Settings ----
+    const { getSettingsForHall } = require("./hallSettingsController");
+    const settings = await getSettingsForHall(hall_id);
+
+    const bodyTaxEnabled = req.body.tax_enabled !== undefined ? req.body.tax_enabled : req.body.taxEnabled;
+    const bodyTaxPercentage = req.body.tax_percentage !== undefined ? req.body.tax_percentage : req.body.taxPercentage;
+    const bodySubtotal = req.body.subtotal !== undefined ? req.body.subtotal : req.body.subtotal;
+
+    const finalTaxEnabled = bodyTaxEnabled !== undefined ? !!bodyTaxEnabled : settings.tax_enabled;
+    const finalTaxPercentage = bodyTaxPercentage !== undefined ? Number(bodyTaxPercentage) : settings.tax_percentage;
+    const finalSubtotal = bodySubtotal !== undefined ? Number(bodySubtotal) : Number(total_amount || 0);
+    const finalDiscount = Number(discount_amount || 0);
+
+    const taxableAmount = finalSubtotal - finalDiscount;
+    const finalTaxAmount = finalTaxEnabled
+      ? Math.round((taxableAmount * finalTaxPercentage) / 100 * 100) / 100
+      : 0;
+
+    const finalTotalAmount = taxableAmount + finalTaxAmount;
+
     // ---- Check subscription booking limit ----
     const today = getLocalDate();
     const { data: sub } = await supabaseAdmin
@@ -180,13 +200,17 @@ const createBooking = async (req, res) => {
         event_type,
         start_date: finalStartDate,
         end_date: finalEndDate,
-        total_amount: total_amount || 0,
+        subtotal: finalSubtotal,
+        tax_enabled: finalTaxEnabled,
+        tax_percentage: finalTaxPercentage,
+        tax_amount: finalTaxAmount,
+        total_amount: finalTotalAmount,
         advance_amount: advance_amount || 0,
         status: "confirmed",
         notes,
         hall_section,
         guest_count,
-        discount_amount: discount_amount || 0,
+        discount_amount: finalDiscount,
         coordinator_name: coordinator_name || null,
         coordinator_phone: coordinator_phone || null,
       }])
@@ -372,7 +396,7 @@ const updateBooking = async (req, res) => {
 
     const { data: existing } = await supabaseAdmin
       .from("bookings")
-      .select("id, start_date, end_date, status")
+      .select("id, start_date, end_date, status, subtotal, total_amount, discount_amount, tax_enabled, tax_percentage, tax_amount")
       .eq("id", id)
       .eq("hall_id", hall_id)
       .maybeSingle();
@@ -411,22 +435,95 @@ const updateBooking = async (req, res) => {
       }
     }
 
+    // Recalculate Billing and Tax snapshot
+    const bodyTaxEnabled = req.body.tax_enabled !== undefined ? req.body.tax_enabled : req.body.taxEnabled;
+    const bodyTaxPercentage = req.body.tax_percentage !== undefined ? req.body.tax_percentage : req.body.taxPercentage;
+    const bodySubtotal = req.body.subtotal !== undefined ? req.body.subtotal : req.body.subtotal;
+
+    const finalTaxEnabled = bodyTaxEnabled !== undefined
+      ? !!bodyTaxEnabled
+      : (existing.tax_enabled !== null && existing.tax_enabled !== undefined ? existing.tax_enabled : false);
+
+    const finalTaxPercentage = bodyTaxPercentage !== undefined
+      ? Number(bodyTaxPercentage)
+      : (existing.tax_percentage !== null && existing.tax_percentage !== undefined ? Number(existing.tax_percentage) : 0);
+
+    const finalSubtotal = bodySubtotal !== undefined
+      ? Number(bodySubtotal)
+      : (total_amount !== undefined
+          ? Number(total_amount)
+          : (existing.subtotal !== null && existing.subtotal !== undefined ? Number(existing.subtotal) : Number(existing.total_amount || 0))
+        );
+
+    const finalDiscount = discount_amount !== undefined
+      ? Number(discount_amount)
+      : Number(existing.discount_amount || 0);
+
+    const taxableAmount = finalSubtotal - finalDiscount;
+    const finalTaxAmount = finalTaxEnabled
+      ? Math.round((taxableAmount * finalTaxPercentage) / 100 * 100) / 100
+      : 0;
+
+    const finalTotalAmount = taxableAmount + finalTaxAmount;
+
     const updates = {};
     if (event_name !== undefined) updates.event_name = event_name;
     if (event_type !== undefined) updates.event_type = event_type;
     if (start_date !== undefined) updates.start_date = finalStartDate;
     if (end_date !== undefined) updates.end_date = finalEndDate;
-    if (total_amount !== undefined) updates.total_amount = total_amount;
     if (status !== undefined) updates.status = status;
     if (notes !== undefined) updates.notes = notes;
     if (hall_section !== undefined) updates.hall_section = hall_section;
     if (guest_count !== undefined) updates.guest_count = guest_count;
-    if (discount_amount !== undefined) updates.discount_amount = discount_amount;
     if (coordinator_name !== undefined) updates.coordinator_name = coordinator_name;
     if (coordinator_phone !== undefined) updates.coordinator_phone = coordinator_phone;
 
+    // Financial updates
+    updates.subtotal = finalSubtotal;
+    updates.tax_enabled = finalTaxEnabled;
+    updates.tax_percentage = finalTaxPercentage;
+    updates.tax_amount = finalTaxAmount;
+    updates.discount_amount = finalDiscount;
+    updates.total_amount = finalTotalAmount;
+
     const { error } = await supabaseAdmin.from("bookings").update(updates).eq("id", id);
     if (error) return res.status(500).json({ message: error.message });
+
+    // Sync Invoice if one exists
+    try {
+      const { data: invoice } = await supabaseAdmin
+        .from("invoices")
+        .select("id")
+        .eq("booking_id", id)
+        .maybeSingle();
+
+      if (invoice) {
+        const { data: payments } = await supabaseAdmin
+          .from("payments")
+          .select("amount")
+          .eq("booking_id", id);
+        const amount_paid = (payments || []).reduce((sum, p) => sum + (p.amount || 0), 0);
+        const balance_due = finalTotalAmount - amount_paid;
+
+        await supabaseAdmin
+          .from("invoices")
+          .update({
+            subtotal: finalSubtotal,
+            discount_amount: finalDiscount,
+            tax_enabled: finalTaxEnabled,
+            tax_percentage: finalTaxPercentage,
+            tax_amount: finalTaxAmount,
+            total_amount: finalTotalAmount,
+            amount_paid,
+            balance_due,
+            status: balance_due <= 0 ? "paid" : "unpaid",
+            updated_at: new Date().toISOString()
+          })
+          .eq("booking_id", id);
+      }
+    } catch (syncErr) {
+      console.error("Error syncing invoice on booking update:", syncErr);
+    }
 
     // Sync calendar event if dates changed
     if (start_date || end_date || event_name) {

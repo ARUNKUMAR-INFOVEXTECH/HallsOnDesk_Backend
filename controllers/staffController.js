@@ -73,13 +73,16 @@ const createStaff = async (req, res) => {
 
     // ---- 1. Check active subscription + user limit ----
     const today = new Date().toISOString().split("T")[0];
+    const subscriptionHallId = req.user.primary_hall_id || req.user.hall_id;
 
     const { data: sub, error: subError } = await supabaseAdmin
       .from("hall_subscriptions")
       .select("package_id, packages(max_users, name)")
-      .eq("hall_id", hall_id)
-      .eq("status", "active")
+      .eq("hall_id", subscriptionHallId)
+      .in("status", ["active", "trial"])
       .gte("end_date", today)
+      .order("created_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (subError || !sub) {
@@ -233,10 +236,34 @@ const getStaff = async (req, res) => {
       ? requestedFields.filter(f => columns.includes(f)).join(", ")
       : requestedFields.filter(f => f !== "updated_at").join(", ");
 
-    let query = supabaseAdmin
-      .from("users")
-      .select(selectFields)
-      .eq("hall_id", hall_id);
+    const isDifferentStaff = req.user.different_staff_management || false;
+    let query;
+
+    if (isDifferentStaff) {
+      query = supabaseAdmin
+        .from("users")
+        .select(selectFields)
+        .eq("hall_id", hall_id)
+        .neq("role", "owner");
+    } else {
+      const { data: linkedUsers, error: linkError } = await supabaseAdmin
+        .from("user_halls")
+        .select("user_id")
+        .eq("hall_id", hall_id);
+
+      if (linkError) return res.status(500).json({ message: linkError.message });
+
+      const userIds = (linkedUsers || []).map((u) => u.user_id);
+      if (userIds.length === 0) {
+        return res.json([]);
+      }
+
+      query = supabaseAdmin
+        .from("users")
+        .select(selectFields)
+        .in("id", userIds)
+        .neq("role", "owner");
+    }
 
     if (role && role !== "all") {
       query = query.eq("role", role);
@@ -291,10 +318,21 @@ const updateStaff = async (req, res) => {
       .from("users")
       .select("id, name, email, auth_user_id, role, hall_id")
       .eq("id", id)
-      .eq("hall_id", hall_id)
       .maybeSingle();
 
     if (existError || !existing) {
+      return res.status(404).json({ message: "Staff not found" });
+    }
+
+    // Verify staff belongs to the active hall (via user_halls link)
+    const { data: link, error: linkErr } = await supabaseAdmin
+      .from("user_halls")
+      .select("id")
+      .eq("user_id", id)
+      .eq("hall_id", hall_id)
+      .maybeSingle();
+
+    if (linkErr || !link) {
       return res.status(404).json({ message: "Staff not found in your hall" });
     }
 
@@ -404,16 +442,29 @@ const deleteStaff = async (req, res) => {
     const { id } = req.params;
     const hall_id = req.user.hall_id;
 
-    const { data: existing } = await supabaseAdmin
+    const { data: existing, error: existError } = await supabaseAdmin
       .from("users")
       .select("id, name, email, hall_id, auth_user_id, role")
       .eq("id", id)
+      .maybeSingle();
+
+    if (existError || !existing) return res.status(404).json({ message: "Staff not found" });
+    if (existing.role === "owner") return res.status(403).json({ message: "Cannot delete hall owner" });
+
+    // Verify staff belongs to the active hall (via user_halls link)
+    const { data: link, error: linkErr } = await supabaseAdmin
+      .from("user_halls")
+      .select("id")
+      .eq("user_id", id)
       .eq("hall_id", hall_id)
       .maybeSingle();
 
-    if (!existing) return res.status(404).json({ message: "Staff not found in your hall" });
-    if (existing.role === "owner") return res.status(403).json({ message: "Cannot delete hall owner" });
+    if (linkErr || !link) return res.status(404).json({ message: "Staff not found in your hall" });
 
+    // Delete user halls associations first
+    await supabaseAdmin.from("user_halls").delete().eq("user_id", id);
+
+    // Delete user record
     await supabaseAdmin.from("users").delete().eq("id", id);
 
     if (existing.auth_user_id) {

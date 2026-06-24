@@ -8,13 +8,13 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseKey);
 
 async function inspect() {
   try {
-    const { data, error } = await supabaseAdmin.from("enquiries").insert([{}]).select();
+    const { data, error } = await supabaseAdmin.from("booking_vendors").insert([{}]).select();
     if (error) {
       console.log("Insert empty error:", error);
     } else {
       console.log("Insert empty succeeded. Created row:", data);
       // Clean up
-      await supabaseAdmin.from("enquiries").delete().eq("id", data[0].id);
+      await supabaseAdmin.from("booking_vendors").delete().eq("booking_id", data[0].booking_id);
     }
   } catch (err) {
     console.error("Exception:", err);

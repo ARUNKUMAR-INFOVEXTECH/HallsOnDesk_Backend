@@ -78,23 +78,38 @@ const createInvoice = async (req, res) => {
 
     const invoiceNumber = await generateInvoiceNumber(hall_id, settings.invoice_prefix);
 
-    // Build line items — use provided ones or auto-generate from booking
+    // Use booking tax settings if available, else fall back to global settings
+    const tax_enabled = booking.tax_enabled !== null && booking.tax_enabled !== undefined
+      ? booking.tax_enabled
+      : settings.tax_enabled;
+
+    const tax_percentage = booking.tax_enabled !== null && booking.tax_enabled !== undefined
+      ? Number(booking.tax_percentage || 0)
+      : settings.tax_percentage;
+
+    const tax_label = booking.tax_label || settings.tax_label || "GST";
+
+    const subtotal = booking.subtotal !== null && booking.subtotal !== undefined
+      ? Number(booking.subtotal)
+      : Number(booking.total_amount || 0);
+
+    const discount = discount_amount !== undefined ? Number(discount_amount) : Number(booking.discount_amount || 0);
+    const taxable_amount = subtotal - discount;
+
+    const tax_amount = tax_enabled
+      ? Math.round((taxable_amount * tax_percentage) / 100 * 100) / 100
+      : 0;
+
+    const total_amount = taxable_amount + tax_amount;
+
     const items = line_items || [
       {
         description: booking.event_name || "Hall Booking",
         quantity: 1,
-        unit_price: booking.total_amount || 0,
-        amount: booking.total_amount || 0,
+        unit_price: subtotal,
+        amount: subtotal,
       },
     ];
-
-    const subtotal = items.reduce((s, item) => s + (item.amount || 0), 0);
-    const discount = discount_amount || 0;
-    const taxable_amount = subtotal - discount;
-    const tax_amount = settings.tax_enabled
-      ? Math.round((taxable_amount * settings.tax_percentage) / 100 * 100) / 100
-      : 0;
-    const total_amount = taxable_amount + tax_amount;
 
     // Amount paid so far
     const amount_paid = (booking.payments || []).reduce((s, p) => s + (p.amount || 0), 0);
@@ -133,9 +148,9 @@ const createInvoice = async (req, res) => {
       line_items: items,
       subtotal,
       discount_amount: discount,
-      tax_enabled: settings.tax_enabled,
-      tax_percentage: settings.tax_percentage,
-      tax_label: settings.tax_label,
+      tax_enabled,
+      tax_percentage,
+      tax_label,
       tax_amount,
       total_amount,
       amount_paid,
