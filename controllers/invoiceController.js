@@ -424,8 +424,8 @@ const getInvoiceHtml = async (req, res) => {
     <!-- Brand Logo & Header -->
     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px;">
       <div>
-        ${inv.hall_logo_url ? `<img src="${inv.hall_logo_url}" alt="Logo" style="height: 56px; max-width: 180px; object-fit: contain; margin-bottom: 12px; display: block; border-radius: 8px;">` : `<div style="height: 48px; width: 48px; background: #0A2540; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 18px; margin-bottom: 12px;">${(inv.hall_name || "H").slice(0,1)}</div>`}
-        <h1 style="font-size: 20px; font-weight: 800; color: #0A2540; letter-spacing: -0.02em;">${inv.hall_name || "Hall Workspace"}</h1>
+        ${inv.hall_logo_url ? `<img src="${inv.hall_logo_url}" alt="Logo" style="height: 56px; max-width: 180px; object-fit: contain; margin-bottom: 12px; display: block; border-radius: 8px;">` : `<div style="height: 48px; width: 48px; background: #0F172A; border-radius: 10px; display: flex; align-items: center; justify-content: center; color: white; font-weight: 800; font-size: 18px; margin-bottom: 12px;">${(inv.hall_name || "H").slice(0,1)}</div>`}
+        <h1 style="font-size: 20px; font-weight: 800; color: #0F172A; letter-spacing: -0.02em;">${inv.hall_name || "Hall Workspace"}</h1>
         <p style="color: #64748b; font-size: 12px; margin-top: 4px; line-height: 1.5;">
           ${inv.hall_address ? inv.hall_address : ""}<br>
           ${inv.hall_phone ? `Phone: ${inv.hall_phone}` : ""} ${inv.hall_email ? `• Email: ${inv.hall_email}` : ""}<br>
@@ -434,7 +434,7 @@ const getInvoiceHtml = async (req, res) => {
       </div>
       <div style="text-align: right; display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
         <span class="badge badge-${inv.status}">${inv.status}</span>
-        <h2 style="font-size: 28px; font-weight: 800; color: #0A2540; margin-top: 8px; letter-spacing: -1px;">INVOICE</h2>
+        <h2 style="font-size: 28px; font-weight: 800; color: #0F172A; margin-top: 8px; letter-spacing: -1px;">INVOICE</h2>
         <p style="font-size: 12px; color: #64748b; font-weight: 600; font-family: monospace; margin-top: 4px;"># ${inv.invoice_number}</p>
         <div style="margin-top: 16px; font-size: 11px; color: #475569; line-height: 1.6;">
           <strong>Date:</strong> ${inv.invoice_date}<br>
@@ -446,7 +446,7 @@ const getInvoiceHtml = async (req, res) => {
     <!-- Parties Details cards -->
     <div class="grid-2" style="margin-bottom: 40px;">
       <div class="info-card">
-        <h4 style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #EE9B00; letter-spacing: 1px; margin-bottom: 8px;">Bill To</h4>
+        <h4 style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #7C3AED; letter-spacing: 1px; margin-bottom: 8px;">Bill To</h4>
         <div style="font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 4px;">${inv.customer_name || ""}</div>
         <p style="color: #475569; font-size: 11.5px; line-height: 1.6;">
           ${inv.customer_phone ? `Phone: ${inv.customer_phone}<br>` : ""}
@@ -456,7 +456,7 @@ const getInvoiceHtml = async (req, res) => {
       </div>
 
       <div class="info-card">
-        <h4 style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #EE9B00; letter-spacing: 1px; margin-bottom: 8px;">Event Specification</h4>
+        <h4 style="font-size: 10px; font-weight: 800; text-transform: uppercase; color: #7C3AED; letter-spacing: 1px; margin-bottom: 8px;">Event Specification</h4>
         <div style="font-size: 13px; font-weight: 700; color: #0f172a; margin-bottom: 4px;">${inv.event_name || inv.event_type || ""}</div>
         <p style="color: #475569; font-size: 11.5px; line-height: 1.6;">
           <strong>Date:</strong> ${inv.event_date} ${inv.event_end_date && inv.event_end_date !== inv.event_date ? ` to ${inv.event_end_date}` : ""}<br>
@@ -486,12 +486,12 @@ const getInvoiceHtml = async (req, res) => {
     <!-- Bottom Calculations & Bank Transfer Instructions -->
     <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-top: 32px;">
       <div style="flex: 1; max-width: 420px; font-size: 11px; color: #64748b; line-height: 1.6; padding-right: 24px;">
-        ${inv.notes ? `<div style="background-color: #f8fafc; border-left: 3px solid #0A2540; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 11.5px; color: #1e293b;"><strong>Operational Notes:</strong><br>${inv.notes}</div>` : ""}
+        ${inv.notes ? `<div style="background-color: #f8fafc; border-left: 3px solid #0F172A; padding: 12px 16px; border-radius: 8px; margin-bottom: 16px; font-size: 11.5px; color: #1e293b;"><strong>Operational Notes:</strong><br>${inv.notes}</div>` : ""}
         
         <div style="background-color: #f8fafc; border: 1px solid #e2e8f0; padding: 14px 16px; border-radius: 12px;">
           <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px;">
             <div>
-              <strong style="color: #0A2540; text-transform: uppercase; font-size: 9.5px; display: block; margin-bottom: 8px; letter-spacing: 0.5px;">Bank Transfer / Payment Instructions</strong>
+              <strong style="color: #0F172A; text-transform: uppercase; font-size: 9.5px; display: block; margin-bottom: 8px; letter-spacing: 0.5px;">Bank Transfer / Payment Instructions</strong>
               ${bankDetails.bank_name ? `<strong>Bank Name:</strong> ${bankDetails.bank_name}<br>` : ""}
               ${bankDetails.account_number ? `<strong>Account Number:</strong> ${bankDetails.account_number}<br>` : ""}
               ${bankDetails.ifsc_code ? `<strong>IFSC Code:</strong> ${bankDetails.ifsc_code}<br>` : ""}
@@ -540,10 +540,10 @@ const getInvoiceHtml = async (req, res) => {
         .map(
           (item) => `
           <tr style="border-bottom: 1px double #e2e8f0;">
-            <td style="padding: 12px 8px; color: #0A2540; font-family: 'Montserrat', sans-serif; font-size: 12px; font-weight: 600;">${item.description || ""}</td>
+            <td style="padding: 12px 8px; color: #0F172A; font-family: 'Montserrat', sans-serif; font-size: 12px; font-weight: 600;">${item.description || ""}</td>
             <td style="padding: 12px 8px; text-align: center; color: #5c6f84; font-family: 'Montserrat', sans-serif;">${item.quantity || 1}</td>
             <td style="padding: 12px 8px; text-align: right; color: #5c6f84; font-family: 'Montserrat', sans-serif;">${fmt(item.unit_price)}</td>
-            <td style="padding: 12px 8px; text-align: right; color: #0A2540; font-weight: 750; font-family: 'Montserrat', sans-serif;">${fmt(item.amount)}</td>
+            <td style="padding: 12px 8px; text-align: right; color: #0F172A; font-weight: 750; font-family: 'Montserrat', sans-serif;">${fmt(item.amount)}</td>
           </tr>`
         )
         .join("");
@@ -561,15 +561,15 @@ const getInvoiceHtml = async (req, res) => {
   .wrapper { max-width: 800px; margin: 0 auto; border: 1px solid #d4af37; padding: 40px; position: relative; background: #fffcf9; }
   .wrapper::before { content: ""; position: absolute; top: 8px; left: 8px; right: 8px; bottom: 8px; border: 1px solid #e0c878; pointer-events: none; }
   .gold-divider { height: 1px; background: linear-gradient(to right, transparent, #d4af37, transparent); margin: 24px 0; }
-  .elegant-title { font-family: 'Playfair Display', serif; font-size: 32px; font-weight: 700; color: #0A2540; letter-spacing: 2px; text-transform: uppercase; }
+  .elegant-title { font-family: 'Playfair Display', serif; font-size: 32px; font-weight: 700; color: #0F172A; letter-spacing: 2px; text-transform: uppercase; }
   .sub-title { font-family: 'Playfair Display', serif; font-size: 18px; color: #b89230; font-style: italic; margin-top: 4px; }
   .section-heading { font-family: 'Playfair Display', serif; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #b89230; letter-spacing: 1.5px; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 10px; }
   table { width: 100%; border-collapse: collapse; margin-top: 16px; }
-  th { border-bottom: 2px solid #b89230; border-top: 1px solid #e2e8f0; color: #0A2540; font-family: 'Playfair Display', serif; font-weight: 700; font-size: 12px; padding: 12px 8px; text-align: left; background: transparent; }
+  th { border-bottom: 2px solid #b89230; border-top: 1px solid #e2e8f0; color: #0F172A; font-family: 'Playfair Display', serif; font-weight: 700; font-size: 12px; padding: 12px 8px; text-align: left; background: transparent; }
   .totals-elegant { margin-left: auto; width: 270px; margin-top: 24px; font-size: 12.5px; }
   .totals-row-el { display: flex; justify-content: space-between; padding: 6px 0; color: #4a5568; }
-  .totals-row-el.bold { font-weight: 700; color: #0A2540; }
-  .totals-row-el.grand-el { border-top: 1px solid #b89230; border-bottom: 1px solid #b89230; padding: 10px 0; margin-top: 8px; font-family: 'Playfair Display', serif; font-size: 16px; font-weight: 700; color: #0A2540; }
+  .totals-row-el.bold { font-weight: 700; color: #0F172A; }
+  .totals-row-el.grand-el { border-top: 1px solid #b89230; border-bottom: 1px solid #b89230; padding: 10px 0; margin-top: 8px; font-family: 'Playfair Display', serif; font-size: 16px; font-weight: 700; color: #0F172A; }
   .status-label { font-family: 'Playfair Display', serif; font-style: italic; color: #b89230; font-weight: 700; font-size: 13px; text-transform: uppercase; letter-spacing: 1px; }
   @media print {
     @page { size: auto; margin: 15mm; }
@@ -598,7 +598,7 @@ const getInvoiceHtml = async (req, res) => {
         </p>
       </div>
       <div style="text-align: right;">
-        <h2 style="font-family: 'Playfair Display', serif; font-size: 26px; font-weight: 400; color: #0A2540; letter-spacing: 2px;">RECEIPT INVOICE</h2>
+        <h2 style="font-family: 'Playfair Display', serif; font-size: 26px; font-weight: 400; color: #0F172A; letter-spacing: 2px;">RECEIPT INVOICE</h2>
         <p style="font-family: 'Playfair Display', serif; color: #b89230; font-size: 13px; font-weight: 700; margin-top: 4px;"># ${inv.invoice_number}</p>
         
         <div style="margin-top: 20px; font-size: 11px; color: #5c6f84; line-height: 1.5; font-family: 'Montserrat', sans-serif;">
@@ -615,7 +615,7 @@ const getInvoiceHtml = async (req, res) => {
     <div style="display: grid; grid-template-columns: 1.2fr 1fr; gap: 24px;">
       <div>
         <div class="section-heading">Prepared for Guest</div>
-        <div style="font-size: 14px; font-weight: 700; color: #0A2540; margin-bottom: 4px; font-family: 'Playfair Display', serif;">${inv.customer_name || ""}</div>
+        <div style="font-size: 14px; font-weight: 700; color: #0F172A; margin-bottom: 4px; font-family: 'Playfair Display', serif;">${inv.customer_name || ""}</div>
         <p style="color: #4a5568; font-size: 11px; line-height: 1.6;">
           ${inv.customer_phone ? `Phone: ${inv.customer_phone}<br>` : ""}
           ${inv.customer_email ? `Email: ${inv.customer_email}<br>` : ""}
@@ -624,7 +624,7 @@ const getInvoiceHtml = async (req, res) => {
       </div>
       <div>
         <div class="section-heading">Event Particulars</div>
-        <div style="font-size: 13px; font-weight: 700; color: #0A2540; margin-bottom: 4px; font-family: 'Playfair Display', serif;">${inv.event_name || inv.event_type || ""}</div>
+        <div style="font-size: 13px; font-weight: 700; color: #0F172A; margin-bottom: 4px; font-family: 'Playfair Display', serif;">${inv.event_name || inv.event_type || ""}</div>
         <p style="color: #4a5568; font-size: 11px; line-height: 1.6;">
           <strong>Date:</strong> ${inv.event_date} ${inv.event_end_date && inv.event_end_date !== inv.event_date ? ` to ${inv.event_end_date}` : ""}<br>
           <strong>Category:</strong> ${inv.event_type || "Wedding Reception"}<br>
@@ -660,7 +660,7 @@ const getInvoiceHtml = async (req, res) => {
               ${bankDetails.bank_name ? `<strong>Banker:</strong> ${bankDetails.bank_name}<br>` : ""}
               ${bankDetails.account_number ? `<strong>Account Number:</strong> ${bankDetails.account_number}<br>` : ""}
               ${bankDetails.ifsc_code ? `<strong>IFSC Code:</strong> ${bankDetails.ifsc_code}<br>` : ""}
-              ${bankDetails.upi_id ? `<strong>UPI Address:</strong> <span style="font-family: monospace; color: #0A2540; font-weight: 600;">${bankDetails.upi_id}</span>` : ""}
+              ${bankDetails.upi_id ? `<strong>UPI Address:</strong> <span style="font-family: monospace; color: #0F172A; font-weight: 600;">${bankDetails.upi_id}</span>` : ""}
               ${!bankDetails.bank_name && !bankDetails.upi_id ? `<em style="color: #a0aec0;">Contact venue operators for bank transfer details.</em>` : ""}
             </div>
             ${qrCodeUrl ? `
@@ -692,8 +692,8 @@ const getInvoiceHtml = async (req, res) => {
 
     <!-- Ornate Signature Lines -->
     <div style="display: flex; justify-content: space-between; margin-top: 60px; font-size: 10px; font-family: 'Playfair Display', serif; text-transform: uppercase; letter-spacing: 1px;">
-      <div style="border-top: 1px solid #d4af37; width: 190px; text-align: center; padding-top: 8px; color: #0A2540;">Authorized Representative</div>
-      <div style="border-top: 1px solid #d4af37; width: 190px; text-align: center; padding-top: 8px; color: #0A2540;">Client / Payer Signature</div>
+      <div style="border-top: 1px solid #d4af37; width: 190px; text-align: center; padding-top: 8px; color: #0F172A;">Authorized Representative</div>
+      <div style="border-top: 1px solid #d4af37; width: 190px; text-align: center; padding-top: 8px; color: #0F172A;">Client / Payer Signature</div>
     </div>
 
     <!-- Brand Footer -->
@@ -878,10 +878,10 @@ const getInvoiceHtml = async (req, res) => {
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { font-family: Arial, sans-serif; font-size: 13px; color: #333; padding: 40px; }
   .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 32px; }
-  .hall-name { font-size: 22px; font-weight: 700; color: #0A2540; }
+  .hall-name { font-size: 22px; font-weight: 700; color: #0F172A; }
   .hall-details { font-size: 12px; color: #666; margin-top: 4px; line-height: 1.6; }
   .invoice-meta { text-align: right; }
-  .invoice-meta h2 { font-size: 28px; color: #0A2540; letter-spacing: 1px; }
+  .invoice-meta h2 { font-size: 28px; color: #0F172A; letter-spacing: 1px; }
   .invoice-meta p { font-size: 12px; color: #666; margin-top: 4px; }
   .divider { border: none; border-top: 1px solid #e5e7eb; margin: 24px 0; }
   .parties { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
@@ -895,8 +895,8 @@ const getInvoiceHtml = async (req, res) => {
   .totals td { padding: 5px 8px; }
   .totals .label { color: #666; }
   .totals .amount { text-align: right; font-weight: 500; }
-  .total-row td { font-size: 15px; font-weight: 700; border-top: 2px solid #0A2540; padding-top: 8px; color: #0A2540; }
-  .balance-row td { color: #EE9B00; font-size: 16px; font-weight: 700; }
+  .total-row td { font-size: 15px; font-weight: 700; border-top: 2px solid #0F172A; padding-top: 8px; color: #0F172A; }
+  .balance-row td { color: #7C3AED; font-size: 16px; font-weight: 700; }
   .paid-row td { color: #16a34a; }
   .status-badge { display: inline-block; padding: 4px 12px; border-radius: 9999px; font-size: 11px; font-weight: 600; border: 1px solid transparent; text-transform: uppercase; }
   .status-paid { background: #dcfce7; color: #16a34a; border-color: #bbf7d0; }
@@ -972,12 +972,12 @@ const getInvoiceHtml = async (req, res) => {
 
   <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-top: 24px;">
     <div style="flex: 1; font-size: 11px; color: #555; line-height: 1.6; padding-right: 32px;">
-      ${inv.notes ? `<div style="background: #f8fafc; border-left: 3px solid #0A2540; padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; color: #333;"><strong>Notes:</strong><br>${inv.notes}</div>` : ""}
+      ${inv.notes ? `<div style="background: #f8fafc; border-left: 3px solid #0F172A; padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; color: #333;"><strong>Notes:</strong><br>${inv.notes}</div>` : ""}
       
       <div style="border: 1px solid #e5e7eb; border-radius: 4px; padding: 10px 14px; background: #fafafa;">
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 16px;">
           <div>
-            <strong style="color: #0A2540; text-transform: uppercase; font-size: 9.5px; display: block; margin-bottom: 6px;">Bank Details / Remittance</strong>
+            <strong style="color: #0F172A; text-transform: uppercase; font-size: 9.5px; display: block; margin-bottom: 6px;">Bank Details / Remittance</strong>
             ${bankDetails.bank_name ? `<strong>Bank Name:</strong> ${bankDetails.bank_name}<br>` : ""}
             ${bankDetails.account_number ? `<strong>Account Number:</strong> ${bankDetails.account_number}<br>` : ""}
             ${bankDetails.ifsc_code ? `<strong>IFSC Code:</strong> ${bankDetails.ifsc_code}<br>` : ""}
@@ -987,7 +987,7 @@ const getInvoiceHtml = async (req, res) => {
           ${qrCodeUrl ? `
           <div style="text-align: center; border-left: 1px solid #e5e7eb; padding-left: 16px; flex-shrink: 0; display: flex; flex-direction: column; align-items: center;">
             <img src="${qrCodeUrl}" alt="UPI Scan to Pay" style="width: 90px; height: 90px; display: block;" />
-            <span style="font-size: 9px; font-weight: 700; color: #0A2540; margin-top: 6px; letter-spacing: 0.5px; text-transform: uppercase;">Scan to Pay</span>
+            <span style="font-size: 9px; font-weight: 700; color: #0F172A; margin-top: 6px; letter-spacing: 0.5px; text-transform: uppercase;">Scan to Pay</span>
           </div>
           ` : ""}
         </div>

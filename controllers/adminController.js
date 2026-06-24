@@ -951,7 +951,218 @@ const addAdminTicketMessage = async (req, res) => {
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+const getPendingSubscriptionPayments = async (req, res) => {
+  try {
+    const { status = "pending" } = req.query;
+
+    const { data, error } = await supabaseAdmin
+      .from("subscription_payments")
+      .select(`
+        *,
+        marriage_halls(hall_name, owner_name),
+        packages(name, price, billing_cycle)
+      `)
+      .eq("status", status)
+      .order("created_at", { ascending: false });
+
+    if (error) return res.status(500).json({ message: error.message });
+    res.json(data || []);
+  } catch (err) {
+    console.error("getPendingSubscriptionPayments error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+const verifySubscriptionPayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { action, rejection_reason = "" } = req.body;
+    const { logActivity } = require("./activityLogController");
+
+    if (!action || (action !== "approve" && action !== "reject")) {
+      return res.status(400).json({ message: "Action must be either 'approve' or 'reject'" });
+    }
+
+    // 1. Fetch payment
+    const { data: payment, error: fetchErr } = await supabaseAdmin
+      .from("subscription_payments")
+      .select("*, packages(name, price, billing_cycle)")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (fetchErr || !payment) {
+      return res.status(404).json({ message: "Payment verification record not found" });
+    }
+
+    if (payment.status !== "pending") {
+      return res.status(400).json({ message: "This payment has already been verified and processed" });
+    }
+
+    if (action === "approve") {
+      // Approve flow
+      const today = new Date();
+      let newEndDate = new Date();
+
+      // Check existing active subscription to extend it if still active
+      const { data: activeSub } = await supabaseAdmin
+        .from("hall_subscriptions")
+        .select("end_date, status")
+        .eq("hall_id", payment.hall_id)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      const todayStr = today.toISOString().split("T")[0];
+      if (activeSub && (activeSub.status === "active" || activeSub.status === "trial") && activeSub.end_date >= todayStr) {
+        // Extend from the current end date
+        newEndDate = new Date(activeSub.end_date);
+      }
+
+      // Add days based on package billing cycle
+      const cycle = payment.packages?.billing_cycle || "monthly";
+      if (cycle === "annual" || cycle === "yearly") {
+        newEndDate.setFullYear(newEndDate.getFullYear() + 1);
+      } else {
+        newEndDate.setMonth(newEndDate.getMonth() + 1);
+      }
+
+      const startDateStr = todayStr;
+      const endDateStr = newEndDate.toISOString().split("T")[0];
+
+      // Update payment
+      const { error: updPayErr } = await supabaseAdmin
+        .from("subscription_payments")
+        .update({
+          status: "approved",
+          verified_at: today.toISOString(),
+          verified_by: req.user.id
+        })
+        .eq("id", id);
+
+      if (updPayErr) return res.status(500).json({ message: updPayErr.message });
+
+      // Upsert hall_subscriptions record (or create a new row)
+      const { error: insSubErr } = await supabaseAdmin
+        .from("hall_subscriptions")
+        .insert([{
+          hall_id: payment.hall_id,
+          package_id: payment.package_id,
+          start_date: startDateStr,
+          end_date: endDateStr,
+          status: "active",
+          payment_status: "paid"
+        }]);
+
+      if (insSubErr) {
+        console.error("verifySubscriptionPayment insert subscription error:", insSubErr);
+        return res.status(500).json({ message: insSubErr.message });
+      }
+
+      // Reactivate marriage_hall status if suspended
+      await supabaseAdmin
+        .from("marriage_halls")
+        .update({ status: "active" })
+        .eq("id", payment.hall_id);
+
+      // Create owner notification
+      await createNotification({
+        hall_id: payment.hall_id,
+        type: "subscription_payment_approved",
+        title: "Subscription Activated",
+        message: `Your payment of ₹${payment.amount} has been verified. Plan "${payment.packages?.name}" is active until ${newEndDate.toLocaleDateString("en-GB")}.`,
+        entity_type: "subscription",
+        entity_id: payment.id
+      });
+
+      // Log activity
+      await logActivity({
+        hall_id: payment.hall_id,
+        user_id: req.user.id,
+        user_name: req.user.name,
+        action: "subscription.payment_approved",
+        entity_type: "subscription_payment",
+        description: `Approved subscription payment of ₹${payment.amount} (UTR: ${payment.transaction_ref_no}).`,
+        metadata: { payment_id: id, amount: payment.amount, ref_no: payment.transaction_ref_no }
+      });
+
+      res.json({ message: "Subscription payment approved and plan activated successfully" });
+    } else {
+      // Reject flow
+      if (!rejection_reason) {
+        return res.status(400).json({ message: "Rejection reason is required" });
+      }
+
+      // Update payment status
+      const { error: updPayErr } = await supabaseAdmin
+        .from("subscription_payments")
+        .update({
+          status: "rejected",
+          rejection_reason,
+          verified_at: new Date().toISOString(),
+          verified_by: req.user.id
+        })
+        .eq("id", id);
+
+      if (updPayErr) return res.status(500).json({ message: updPayErr.message });
+
+      // Create owner notification
+      await createNotification({
+        hall_id: payment.hall_id,
+        type: "subscription_payment_rejected",
+        title: "Subscription Payment Rejected",
+        message: `Your billing verification request of ₹${payment.amount} (UTR: ${payment.transaction_ref_no}) was rejected. Reason: ${rejection_reason}`,
+        entity_type: "subscription",
+        entity_id: payment.id
+      });
+
+      // Log activity
+      await logActivity({
+        hall_id: payment.hall_id,
+        user_id: req.user.id,
+        user_name: req.user.name,
+        action: "subscription.payment_rejected",
+        entity_type: "subscription_payment",
+        description: `Rejected subscription payment of ₹${payment.amount} (UTR: ${payment.transaction_ref_no}). Reason: ${rejection_reason}`,
+        metadata: { payment_id: id, amount: payment.amount, ref_no: payment.transaction_ref_no, reason: rejection_reason }
+      });
+
+      res.json({ message: "Subscription payment rejected successfully" });
+    }
+  } catch (err) {
+    console.error("verifySubscriptionPayment error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+const sendTestEmail = async (req, res) => {
+  try {
+    const { email } = req.body;
+    const { sendHallOwnerEmail } = require("../utils/emailHelper");
+
+    if (!email) {
+      return res.status(400).json({ message: "email parameter is required" });
+    }
+
+    const result = await sendHallOwnerEmail({
+      to: email,
+      owner_name: "Super Admin Tester",
+      hall_name: "Infovex Test Hall",
+      city: "Chennai",
+      package_name: "Premium Enterprise Plan",
+      temp_password: "TEST-PASSWORD-123",
+      verification_link: "https://infovexhalls.com/verify-test"
+    });
+
+    if (result.success) {
+      return res.json({ success: true, message: `Test email successfully dispatched to ${email}` });
+    } else {
+      return res.status(500).json({ success: false, message: "Email dispatch failed", error: result.error });
+    }
+  } catch (err) {
+    console.error("sendTestEmail error:", err);
+    res.status(500).json({ message: "Server error calling email edge function", error: err.message });
+  }
+};
 
 module.exports = {
   createHall,
@@ -973,4 +1184,7 @@ module.exports = {
   getAdminTickets,
   updateAdminTicketStatus,
   addAdminTicketMessage,
+  getPendingSubscriptionPayments,
+  verifySubscriptionPayment,
+  sendTestEmail,
 };

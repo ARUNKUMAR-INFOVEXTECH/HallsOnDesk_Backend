@@ -22,6 +22,9 @@ const {
   getAdminTickets,
   updateAdminTicketStatus,
   addAdminTicketMessage,
+  getPendingSubscriptionPayments,
+  verifySubscriptionPayment,
+  sendTestEmail,
 } = require("../controllers/adminController");
 
 const isSuperAdmin = [authMiddleware, roleMiddleware("super_admin")];
@@ -37,6 +40,11 @@ router.put("/settings", ...isSuperAdmin, updateAdminSettings);
 router.get("/tickets", ...isSuperAdmin, getAdminTickets);
 router.patch("/tickets/:id", ...isSuperAdmin, updateAdminTicketStatus);
 router.post("/tickets/:id/messages", ...isSuperAdmin, addAdminTicketMessage);
+
+// SaaS Subscription Payments Verification
+router.get("/billing/pending", ...isSuperAdmin, getPendingSubscriptionPayments);
+router.post("/billing/:id/verify", ...isSuperAdmin, verifySubscriptionPayment);
+router.post("/billing/test-email", ...isSuperAdmin, sendTestEmail);
 
 router.post("/halls", ...isSuperAdmin, createHall);
 router.get("/halls", ...isSuperAdmin, getAllHalls);

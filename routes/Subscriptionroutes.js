@@ -2,7 +2,14 @@ const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middleware/authMiddleware");
 const roleMiddleware = require("../middleware/roleMiddleware");
-const { getSubscription, renewSubscription, changePackage, requestSubscriptionChange } = require("../controllers/SubcriptionController");
+const {
+  getSubscription,
+  renewSubscription,
+  changePackage,
+  requestSubscriptionChange,
+  submitSubscriptionPayment,
+  getSubscriptionPaymentHistory
+} = require("../controllers/SubcriptionController");
 
 const isSuperAdmin = [authMiddleware, roleMiddleware("super_admin")];
 
@@ -14,6 +21,10 @@ router.get("/my", authMiddleware, (req, res, next) => {
 
 // Hall owner can request upgrade or extension
 router.post("/request-change", authMiddleware, requestSubscriptionChange);
+
+// Owner subscription payment remittance submission & history
+router.post("/pay", authMiddleware, submitSubscriptionPayment);
+router.get("/payments/history", authMiddleware, getSubscriptionPaymentHistory);
 
 // Super admin manages subscriptions
 router.get("/:hall_id", ...isSuperAdmin, getSubscription);
