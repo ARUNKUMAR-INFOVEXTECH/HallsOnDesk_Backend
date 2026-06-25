@@ -15,8 +15,10 @@ const {
   getVendorAllocationStats,
 } = require("../controllers/bookingVendorController");
 
-const isAuthenticated = [authMiddleware, subscriptionMiddleware];
-const hasPermission = (perm) => [authMiddleware, subscriptionMiddleware, permissionMiddleware(perm)];
+const featureGate = require("../middleware/featureGate");
+
+const isAuthenticated = [authMiddleware, subscriptionMiddleware, featureGate("vendors")];
+const hasPermission = (perm) => [authMiddleware, subscriptionMiddleware, featureGate("vendors"), permissionMiddleware(perm)];
 
 router.get("/", ...hasPermission("view_vendors"), getVendors);
 router.get("/:id/allocations", ...hasPermission("view_vendors"), getVendorAllocations);

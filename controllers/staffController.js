@@ -90,6 +90,12 @@ const createStaff = async (req, res) => {
     }
 
     const maxUsers = sub.packages?.max_users;
+    const planName = (sub.packages?.name || "").toLowerCase();
+    const hasPayroll = req.user.role === "super_admin" || planName.includes("transformation") || planName.includes("pro") || planName.includes("deluxe");
+
+    if (salary !== undefined && Number(salary) > 0 && !hasPayroll) {
+      return res.status(403).json({ message: "Salary/Payroll feature is locked under your current SaaS plan." });
+    }
 
     if (maxUsers !== null && maxUsers !== undefined) {
       const { count } = await supabaseAdmin
@@ -140,7 +146,7 @@ const createStaff = async (req, res) => {
     addIfSupported("department", department || "other");
     addIfSupported("employee_id", employee_id || `HOD-${String(authData.user.id).substring(0, 3).toUpperCase()}`);
     addIfSupported("joining_date", joining_date || new Date().toISOString());
-    addIfSupported("salary", salary !== undefined ? Number(salary) : 0.00);
+    addIfSupported("salary", (salary !== undefined && hasPayroll) ? Number(salary) : 0.00);
     addIfSupported("address", address || null);
     addIfSupported("city", city || null);
     addIfSupported("state", state || null);
@@ -378,7 +384,29 @@ const updateStaff = async (req, res) => {
     if (department !== undefined) setIfSupported("department", department || "other");
     if (employee_id !== undefined) setIfSupported("employee_id", employee_id || null);
     if (joining_date !== undefined) setIfSupported("joining_date", joining_date || null);
-    if (salary !== undefined) setIfSupported("salary", salary !== null ? Number(salary) : 0.00);
+
+    // Verify payroll SaaS feature is unlocked
+    const todayVal = new Date().toISOString().split("T")[0];
+    const subscriptionHallIdVal = req.user.primary_hall_id || req.user.hall_id;
+    const { data: subVal } = await supabaseAdmin
+      .from("hall_subscriptions")
+      .select("package_id, packages(name)")
+      .eq("hall_id", subscriptionHallIdVal)
+      .in("status", ["active", "trial"])
+      .gte("end_date", todayVal)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const planNameVal = (subVal?.packages?.name || "").toLowerCase();
+    const hasPayrollVal = req.user.role === "super_admin" || planNameVal.includes("transformation") || planNameVal.includes("pro") || planNameVal.includes("deluxe");
+
+    if (salary !== undefined) {
+      if (!hasPayrollVal && Number(salary) > 0) {
+        return res.status(403).json({ message: "Salary/Payroll feature is locked under your current SaaS plan." });
+      }
+      setIfSupported("salary", (salary !== null && hasPayrollVal) ? Number(salary) : 0.00);
+    }
     if (address !== undefined) setIfSupported("address", address || null);
     if (city !== undefined) setIfSupported("city", city || null);
     if (state !== undefined) setIfSupported("state", state || null);

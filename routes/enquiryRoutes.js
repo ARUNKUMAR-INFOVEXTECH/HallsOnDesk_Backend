@@ -23,8 +23,10 @@ const {
 
 const { validateEnquiry } = require("../middleware/validationMiddleware");
 
-const isAuthenticated = [authMiddleware, subscriptionMiddleware];
-const hasPermission = (perm) => [authMiddleware, subscriptionMiddleware, permissionMiddleware(perm)];
+const featureGate = require("../middleware/featureGate");
+
+const isAuthenticated = [authMiddleware, subscriptionMiddleware, featureGate("enquiries")];
+const hasPermission = (perm) => [authMiddleware, subscriptionMiddleware, featureGate("enquiries"), permissionMiddleware(perm)];
 
 // ---- Enquiry CRUD ----
 router.get("/stats", ...hasPermission("view_bookings"), getEnquiryStats);
