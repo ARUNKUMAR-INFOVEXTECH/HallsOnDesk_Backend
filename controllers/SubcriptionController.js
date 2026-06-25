@@ -69,13 +69,57 @@ const changePackage = async (req, res) => {
 
   if (!package_id) return res.status(400).json({ message: "package_id required" });
 
-  const { error } = await supabaseAdmin
+  // 1. Get the latest subscription record for this hall
+  const { data: latestSub, error: fetchError } = await supabaseAdmin
+    .from("hall_subscriptions")
+    .select("id")
+    .eq("hall_id", hall_id)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (fetchError || !latestSub) {
+    return res.status(404).json({ message: "Subscription record not found for this hall" });
+  }
+
+  // 2. Update this specific subscription record's package
+  const { error: subError } = await supabaseAdmin
     .from("hall_subscriptions")
     .update({ package_id })
-    .eq("hall_id", hall_id)
-    .eq("status", "active");
+    .eq("id", latestSub.id);
 
-  if (error) return res.status(500).json({ message: error.message });
+  if (subError) return res.status(500).json({ message: subError.message });
+
+  // 3. Synchronize the setup fee ledger if present
+  try {
+    const { data: newPkg } = await supabaseAdmin
+      .from("packages")
+      .select("setup_fee")
+      .eq("id", package_id)
+      .maybeSingle();
+
+    if (newPkg) {
+      const { data: setupPay } = await supabaseAdmin
+        .from("setup_fee_payments")
+        .select("id, status")
+        .eq("hall_id", hall_id)
+        .maybeSingle();
+
+      if (setupPay) {
+        const setupUpdates = { package_id };
+        if (setupPay.status === "unpaid") {
+          setupUpdates.setup_fee_amount = parseFloat(newPkg.setup_fee) || 0;
+        }
+        await supabaseAdmin
+          .from("setup_fee_payments")
+          .update(setupUpdates)
+          .eq("id", setupPay.id);
+      }
+    }
+  } catch (syncErr) {
+    console.warn("Failed to synchronize setup fee ledger during package change:", syncErr.message);
+  }
+
   res.json({ message: "Package changed successfully" });
 };
 
