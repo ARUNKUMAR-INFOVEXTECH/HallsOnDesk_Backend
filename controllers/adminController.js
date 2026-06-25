@@ -81,11 +81,12 @@ const createHall = async (req, res) => {
   // 4. Create subscription
   const { data: pkg } = await supabaseAdmin
     .from("packages")
-    .select("name")
+    .select("name, setup_fee")
     .eq("id", package_id)
     .maybeSingle();
 
   let trialDays = 30;
+  const setupFee = parseFloat(pkg?.setup_fee || 0);
   if (pkg) {
     const nameLower = pkg.name.toLowerCase();
     if (nameLower.includes("basic")) {
@@ -109,6 +110,21 @@ const createHall = async (req, res) => {
   }]);
 
   if (subError) console.error("Subscription creation failed:", subError.message);
+
+  // 4b. Create setup fee payment record
+  const { error: setupFeeError } = await supabaseAdmin.from("setup_fee_payments").insert([{
+    hall_id: hall.id,
+    package_id,
+    setup_fee_amount: setupFee,
+    amount_paid: 0.00,
+    status: setupFee > 0 ? "unpaid" : "paid",
+    due_date: getLocalDate(endDate),
+    payment_method: "none",
+    transaction_ref_no: "",
+    notes: setupFee > 0 ? "Pending collection of setup fee." : "No setup fee applicable."
+  }]);
+
+  if (setupFeeError) console.error("Setup fee payment creation failed:", setupFeeError.message);
 
   // 5. Update hall with owner email
   await supabaseAdmin.from("marriage_halls").update({ email: owner_email }).eq("id", hall.id);
@@ -190,6 +206,7 @@ const deleteHall = async (req, res) => {
     "invoices",
     "payments",
     "subscription_payments",
+    "setup_fee_payments",
     "support_tickets",
     "enquiry_followups",
     "notifications",
@@ -1388,6 +1405,504 @@ const recordManualSubscriptionPayment = async (req, res) => {
   }
 };
 
+// Get all setup fee payments
+const getSetupFeePayments = async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("setup_fee_payments")
+      .select("*, marriage_halls(hall_name), packages(name)")
+      .order("created_at", { ascending: false });
+
+    if (error) return res.status(500).json({ message: error.message });
+    res.json(data || []);
+  } catch (err) {
+    console.error("getSetupFeePayments error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// Update a setup fee payment (Record a payment collection)
+const updateSetupFeePayment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { amount_paid, payment_method, transaction_ref_no, notes = "" } = req.body;
+
+    if (amount_paid === undefined || amount_paid < 0) {
+      return res.status(400).json({ message: "Valid amount_paid is required" });
+    }
+
+    // Get current record
+    const { data: record, error: getErr } = await supabaseAdmin
+      .from("setup_fee_payments")
+      .select("setup_fee_amount, amount_paid")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (getErr || !record) {
+      return res.status(404).json({ message: "Setup fee payment record not found" });
+    }
+
+    const newAmountPaid = parseFloat(amount_paid);
+    const setupFeeAmount = parseFloat(record.setup_fee_amount);
+
+    let status = "unpaid";
+    if (newAmountPaid >= setupFeeAmount) {
+      status = "paid";
+    } else if (newAmountPaid > 0) {
+      status = "partially_paid";
+    }
+
+    const { data: updatedRecord, error: updErr } = await supabaseAdmin
+      .from("setup_fee_payments")
+      .update({
+        amount_paid: newAmountPaid,
+        status,
+        payment_method,
+        transaction_ref_no,
+        notes: notes || "Recorded manually by Admin.",
+        updated_at: new Date().toISOString()
+      })
+      .eq("id", id)
+      .select()
+      .single();
+
+    if (updErr) return res.status(500).json({ message: updErr.message });
+
+    res.json({
+      message: "Setup fee payment updated successfully.",
+      data: updatedRecord
+    });
+  } catch (err) {
+    console.error("updateSetupFeePayment error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// Generate custom invoice HTML on-the-fly
+const generateCustomAdminInvoice = async (req, res) => {
+  try {
+    const {
+      hall_id,
+      invoice_no,
+      invoice_date,
+      items = [],
+      tax_enabled = false,
+      payment_method = "bank_transfer",
+      transaction_ref_no = "",
+      notes = ""
+    } = req.body;
+
+    if (!hall_id || items.length === 0) {
+      return res.status(400).send("<h3>Missing required parameters (hall_id, items)</h3>");
+    }
+
+    // Fetch hall profile and info
+    const { data: hall } = await supabaseAdmin
+      .from("marriage_halls")
+      .select("hall_name, owner_name")
+      .eq("id", hall_id)
+      .maybeSingle();
+
+    const { data: profile } = await supabaseAdmin
+      .from("hall_profiles")
+      .select("*")
+      .eq("hall_id", hall_id)
+      .maybeSingle();
+
+    // Fetch admin settings
+    const { data: settings } = await supabaseAdmin
+      .from("admin_settings")
+      .select("*")
+      .limit(1)
+      .maybeSingle();
+
+    const companyName = "Infovex Halls";
+    const companyGstin = settings?.gstin || "33AAFCI8876F1Z8";
+    const supportPhone = settings?.support_phone || "+91 91801 02030";
+    const supportEmail = settings?.support_email || "billing@infovex.com";
+    const invoicePrefix = settings?.invoice_prefix || "INF-GEN-";
+
+    const hallName = hall?.hall_name || "Venue Host";
+    const ownerName = hall?.owner_name || "Hall Owner";
+    const clientAddress = profile?.address || "";
+    const clientCity = profile?.city || "";
+    const clientState = profile?.state || "";
+    const clientGstin = profile?.gst_number || "N/A";
+
+    const invNo = invoice_no || `${invoicePrefix}${Date.now().toString().slice(-6)}`;
+    const invDate = invoice_date ? new Date(invoice_date).toLocaleDateString("en-GB") : new Date().toLocaleDateString("en-GB");
+
+    // Calculations
+    let subtotal = 0;
+    const computedItems = items.map(item => {
+      const rate = parseFloat(item.rate || 0);
+      const qty = parseFloat(item.qty || 1);
+      const amount = rate * qty;
+      subtotal += amount;
+      return {
+        description: item.description,
+        qty,
+        rate,
+        amount
+      };
+    });
+
+    const taxEnabled = !!tax_enabled;
+    let cgst = 0;
+    let sgst = 0;
+    let totalAmount = subtotal;
+
+    if (taxEnabled) {
+      cgst = subtotal * 0.09;
+      sgst = subtotal * 0.09;
+      totalAmount = subtotal + cgst + sgst;
+    }
+
+    const symbol = "₹";
+    const fmt = (val) => `${symbol}${Number(val).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    let taxRows = "";
+    if (taxEnabled) {
+      taxRows = `
+        <tr>
+          <td>CGST (9%):</td>
+          <td style="text-align: right; font-family: monospace;">${fmt(cgst)}</td>
+        </tr>
+        <tr>
+          <td>SGST (9%):</td>
+          <td style="text-align: right; font-family: monospace;">${fmt(sgst)}</td>
+        </tr>
+      `;
+    }
+
+    const itemsRowsHtml = computedItems.map(item => `
+      <tr>
+        <td>
+          <div class="item-desc">${item.description}</div>
+        </td>
+        <td style="text-align: right;">${item.qty}</td>
+        <td style="text-align: right; font-family: monospace;">${fmt(item.rate)}</td>
+        <td style="text-align: right; font-weight: 600; font-family: monospace;">${fmt(item.amount)}</td>
+      </tr>
+    `).join("");
+
+    const htmlContent = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Custom Invoice - ${invNo}</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    
+    @page {
+      size: auto;
+      margin: 15mm;
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
+      color: #1e293b;
+      background-color: #ffffff;
+      margin: 0;
+      padding: 0;
+      line-height: 1.5;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
+    .invoice-container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 10px;
+    }
+
+    .header-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 30px;
+    }
+
+    .header-table td {
+      vertical-align: top;
+    }
+
+    .logo-text {
+      font-size: 20px;
+      font-weight: 800;
+      color: #4f46e5;
+      letter-spacing: -0.5px;
+      margin: 0;
+      line-height: 1;
+    }
+
+    .logo-sub {
+      font-size: 9px;
+      color: #64748b;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-top: 2px;
+    }
+
+    .invoice-title-block {
+      text-align: right;
+    }
+
+    .invoice-title {
+      font-size: 26px;
+      font-weight: 800;
+      color: #4f46e5;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin: 0;
+    }
+
+    .meta-details {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #475569;
+      font-weight: 500;
+    }
+
+    .meta-details strong {
+      color: #0f172a;
+    }
+
+    .address-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 35px;
+    }
+
+    .address-table td {
+      width: 50%;
+      vertical-align: top;
+    }
+
+    .address-block {
+      padding-right: 20px;
+    }
+
+    .address-title {
+      font-size: 10px;
+      font-weight: 800;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 8px;
+    }
+
+    .address-name {
+      font-size: 14px;
+      font-weight: 700;
+      color: #0f172a;
+      margin: 0 0 4px 0;
+    }
+
+    .address-text {
+      font-size: 12px;
+      color: #475569;
+      margin: 0;
+      font-weight: 500;
+    }
+
+    .items-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 30px;
+    }
+
+    .items-table th {
+      background-color: #f8fafc;
+      color: #475569;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 12px 16px;
+      text-align: left;
+      border-bottom: 2px solid #e2e8f0;
+    }
+
+    .items-table td {
+      padding: 16px;
+      font-size: 12px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+
+    .item-desc {
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    .totals-table {
+      width: 40%;
+      margin-left: auto;
+      border-collapse: collapse;
+      margin-bottom: 40px;
+    }
+
+    .totals-table td {
+      padding: 8px 16px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #475569;
+    }
+
+    .totals-table tr.grand-total {
+      border-top: 2px solid #e2e8f0;
+      font-size: 14px;
+      font-weight: 800;
+      color: #0f172a;
+    }
+
+    .totals-table tr.grand-total td {
+      padding-top: 12px;
+      font-weight: 800;
+      color: #0f172a;
+    }
+
+    .footer-note {
+      font-size: 10px;
+      color: #94a3b8;
+      text-align: center;
+      margin-top: 50px;
+      font-weight: 600;
+      border-top: 1px solid #f1f5f9;
+      padding-top: 15px;
+    }
+
+    .payment-info-box {
+      background-color: #f8fafc;
+      border: 1px dashed #cbd5e1;
+      border-radius: 8px;
+      padding: 15px;
+      font-size: 11px;
+      color: #475569;
+      margin-bottom: 20px;
+    }
+
+    .payment-info-title {
+      font-weight: 800;
+      color: #0f172a;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+    }
+
+    @media print {
+      body {
+        margin: 0;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="invoice-container">
+    <table class="header-table">
+      <tr>
+        <td>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <img src="/logo.png" alt="Logo" style="height: 38px; object-fit: contain;">
+            <div>
+              <div class="logo-text">Infovex Halls</div>
+              <div class="logo-sub">Venue CRM & ERP</div>
+            </div>
+          </div>
+        </td>
+        <td class="invoice-title-block">
+          <div class="invoice-title">Tax Invoice</div>
+          <div class="meta-details">
+            <div>Invoice No: <strong>${invNo}</strong></div>
+            <div>Date: <strong>${invDate}</strong></div>
+            <div style="margin-top: 6px;"><span style="background: #e6f4ea; color: #137333; border: 1px solid #c2e7c9; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px; text-transform: uppercase;">GENERATED</span></div>
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <table class="address-table">
+      <tr>
+        <td>
+          <div class="address-block">
+            <div class="address-title">Billed By</div>
+            <div class="address-name">${companyName}</div>
+            <div class="address-text">
+              12, Ground Floor, Infovex Tech Hub<br>
+              GSTIN: ${companyGstin}<br>
+              Email: ${supportEmail} | Phone: ${supportPhone}
+            </div>
+          </div>
+        </td>
+        <td>
+          <div class="address-block">
+            <div class="address-title">Billed To</div>
+            <div class="address-name">${hallName}</div>
+            <div class="address-text">
+              Proprietor: ${ownerName}<br>
+              ${clientAddress ? `${clientAddress}, ` : ""}${clientCity ? `${clientCity}, ` : ""}${clientState}<br>
+              GSTIN: ${clientGstin}
+            </div>
+          </div>
+        </td>
+      </tr>
+    </table>
+
+    <table class="items-table">
+      <thead>
+        <tr>
+          <th>Description</th>
+          <th style="text-align: right; width: 100px;">Qty</th>
+          <th style="text-align: right; width: 150px;">Rate</th>
+          <th style="text-align: right; width: 150px;">Amount</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${itemsRowsHtml}
+      </tbody>
+    </table>
+
+    <table style="width: 100%; border-collapse: collapse;">
+      <tr>
+        <td style="width: 55%; vertical-align: top;">
+          <div class="payment-info-box">
+            <div class="payment-info-title">Transaction & Remittance Details</div>
+            <div>Payment Method: <strong style="text-transform: uppercase;">${payment_method}</strong></div>
+            ${transaction_ref_no ? `<div>Reference / UTR: <strong style="font-family: monospace;">${transaction_ref_no}</strong></div>` : ""}
+            ${notes ? `<div style="margin-top: 6px; font-style: italic;">Notes: ${notes}</div>` : ""}
+          </div>
+        </td>
+        <td style="width: 45%; vertical-align: top;">
+          <table class="totals-table">
+            <tr>
+              <td>Subtotal:</td>
+              <td style="text-align: right; font-family: monospace;">${fmt(subtotal)}</td>
+            </tr>
+            ${taxRows}
+            <tr class="grand-total">
+              <td>Total Amount:</td>
+              <td style="text-align: right; font-family: monospace;">${fmt(totalAmount)}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    <div class="footer-note">
+      Powered by Infovex Halls — India's First dedicated Venue CRM by Infovex Technologies
+    </div>
+  </div>
+</body>
+</html>
+    `;
+    res.setHeader("Content-Type", "text/html");
+    res.send(htmlContent);
+  } catch (err) {
+    console.error("generateCustomAdminInvoice error:", err);
+    res.status(500).send("<h3>Internal Server Error</h3>");
+  }
+};
+
 module.exports = {
   createHall,
   getAllHalls,
@@ -1413,4 +1928,7 @@ module.exports = {
   sendTestEmail,
   getHallSubscriptionPayments,
   recordManualSubscriptionPayment,
+  getSetupFeePayments,
+  updateSetupFeePayment,
+  generateCustomAdminInvoice,
 };

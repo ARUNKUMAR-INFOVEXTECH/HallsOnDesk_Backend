@@ -27,6 +27,9 @@ const {
   sendTestEmail,
   getHallSubscriptionPayments,
   recordManualSubscriptionPayment,
+  getSetupFeePayments,
+  updateSetupFeePayment,
+  generateCustomAdminInvoice,
 } = require("../controllers/adminController");
 
 const isSuperAdmin = [authMiddleware, roleMiddleware("super_admin")];
@@ -49,6 +52,13 @@ router.get("/billing/pending", ...isSuperAdmin, getPendingSubscriptionPayments);
 router.post("/billing/:id/verify", ...isSuperAdmin, verifySubscriptionPayment);
 router.post("/billing/test-email", ...isSuperAdmin, sendTestEmail);
 router.get("/billing/payments/:id/html", ...isSuperAdmin, getSubscriptionInvoiceHtml);
+
+// Setup Fee Payments
+router.get("/setup-fee-payments", ...isSuperAdmin, getSetupFeePayments);
+router.put("/setup-fee-payments/:id", ...isSuperAdmin, updateSetupFeePayment);
+
+// Custom Invoice Generator
+router.post("/generate-custom-invoice", ...isSuperAdmin, generateCustomAdminInvoice);
 
 router.post("/halls", ...isSuperAdmin, createHall);
 router.get("/halls", ...isSuperAdmin, getAllHalls);
