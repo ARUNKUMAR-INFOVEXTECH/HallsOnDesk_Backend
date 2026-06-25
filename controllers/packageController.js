@@ -1,7 +1,7 @@
 const { supabaseAdmin } = require("../config/supabase");
 
 const createPackage = async (req, res) => {
-  const { name, price, billing_cycle, max_users, max_bookings, features } = req.body;
+  const { name, price, setup_fee, billing_cycle, max_users, max_bookings, features } = req.body;
 
   if (!name || !price) {
     return res.status(400).json({ message: "name and price are required" });
@@ -9,7 +9,7 @@ const createPackage = async (req, res) => {
 
   const { data, error } = await supabaseAdmin
     .from("packages")
-    .insert([{ name, price, billing_cycle: billing_cycle || "monthly", max_users, max_bookings, features }])
+    .insert([{ name, price, setup_fee: setup_fee || 0, billing_cycle: billing_cycle || "monthly", max_users, max_bookings, features }])
     .select()
     .single();
 

@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middleware/authMiddleware");
-const roleMiddleware = require("../middleware/roleMiddleware");
 const subscriptionMiddleware = require("../middleware/Subscriptionmiddleware");
+const permissionMiddleware = require("../middleware/permissionMiddleware");
 const {
   createVendor,
   getVendors,
@@ -16,14 +16,14 @@ const {
 } = require("../controllers/bookingVendorController");
 
 const isAuthenticated = [authMiddleware, subscriptionMiddleware];
-const isOwnerOrManager = [authMiddleware, roleMiddleware(["owner", "manager"]), subscriptionMiddleware];
+const hasPermission = (perm) => [authMiddleware, subscriptionMiddleware, permissionMiddleware(perm)];
 
-router.get("/", ...isAuthenticated, getVendors);
-router.get("/:id/allocations", ...isAuthenticated, getVendorAllocations);
-router.get("/:id/allocation-stats", ...isAuthenticated, getVendorAllocationStats);
-router.get("/:id", ...isAuthenticated, getVendorById);
-router.post("/", ...isOwnerOrManager, createVendor);
-router.put("/:id", ...isOwnerOrManager, updateVendor);
-router.delete("/:id", ...isOwnerOrManager, deleteVendor);
+router.get("/", ...hasPermission("view_vendors"), getVendors);
+router.get("/:id/allocations", ...hasPermission("view_vendors"), getVendorAllocations);
+router.get("/:id/allocation-stats", ...hasPermission("view_vendors"), getVendorAllocationStats);
+router.get("/:id", ...hasPermission("view_vendors"), getVendorById);
+router.post("/", ...hasPermission("manage_vendors"), createVendor);
+router.put("/:id", ...hasPermission("manage_vendors"), updateVendor);
+router.delete("/:id", ...hasPermission("manage_vendors"), deleteVendor);
 
 module.exports = router;

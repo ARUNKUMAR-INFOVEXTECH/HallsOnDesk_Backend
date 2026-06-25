@@ -31,7 +31,7 @@ module.exports = async (req, res, next) => {
     // Fetch full user profile from our users table using auth_user_id
     const { data: profile, error: profileError } = await supabaseAdmin
       .from("users")
-      .select("id, name, email, role, hall_id, auth_user_id, multi_hall_enabled, different_staff_management, status")
+      .select("id, name, email, role, hall_id, auth_user_id, multi_hall_enabled, different_staff_management, status, permissions")
       .eq("auth_user_id", user.id)
       .maybeSingle();
 

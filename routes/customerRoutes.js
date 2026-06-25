@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middleware/authMiddleware");
-const roleMiddleware = require("../middleware/roleMiddleware");
 const subscriptionMiddleware = require("../middleware/Subscriptionmiddleware");
+const permissionMiddleware = require("../middleware/permissionMiddleware");
 const {
   createCustomer,
   getCustomers,
@@ -12,15 +12,14 @@ const {
   logCustomerInteraction,
 } = require("../controllers/customerController");
 
-// All staff roles can read customers; owner/manager can write
 const isAuthenticated = [authMiddleware, subscriptionMiddleware];
-const isOwnerOrManager = [authMiddleware, roleMiddleware(["owner", "manager"]), subscriptionMiddleware];
+const hasPermission = (perm) => [authMiddleware, subscriptionMiddleware, permissionMiddleware(perm)];
 
-router.get("/", ...isAuthenticated, getCustomers);
-router.get("/:id", ...isAuthenticated, getCustomerById);
-router.post("/", ...isOwnerOrManager, createCustomer);
-router.put("/:id", ...isOwnerOrManager, updateCustomer);
-router.delete("/:id", ...isOwnerOrManager, deleteCustomer);
-router.post("/:id/interactions", ...isAuthenticated, logCustomerInteraction);
+router.get("/", ...hasPermission("view_customers"), getCustomers);
+router.get("/:id", ...hasPermission("view_customers"), getCustomerById);
+router.post("/", ...hasPermission("create_customers"), createCustomer);
+router.put("/:id", ...hasPermission("edit_customers"), updateCustomer);
+router.delete("/:id", ...hasPermission("delete_customers"), deleteCustomer);
+router.post("/:id/interactions", ...hasPermission("edit_customers"), logCustomerInteraction);
 
 module.exports = router;

@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middleware/authMiddleware");
-const roleMiddleware = require("../middleware/roleMiddleware");
 const subscriptionMiddleware = require("../middleware/Subscriptionmiddleware");
+const permissionMiddleware = require("../middleware/permissionMiddleware");
 const {
   createPayment,
   getPayments,
@@ -14,12 +14,12 @@ const {
 const { validatePayment } = require("../middleware/validationMiddleware");
 
 const isAuthenticated = [authMiddleware, subscriptionMiddleware];
-const isOwnerOrManager = [authMiddleware, roleMiddleware(["owner", "manager"]), subscriptionMiddleware];
+const hasPermission = (perm) => [authMiddleware, subscriptionMiddleware, permissionMiddleware(perm)];
 
-router.get("/stats", ...isOwnerOrManager, getPaymentStats);
-router.get("/", ...isAuthenticated, getPayments);
-router.get("/booking/:booking_id", ...isAuthenticated, getPaymentsByBooking);
-router.post("/", ...isOwnerOrManager, validatePayment, createPayment);
-router.delete("/:id", ...isOwnerOrManager, deletePayment);
+router.get("/stats", ...hasPermission("view_payments"), getPaymentStats);
+router.get("/", ...hasPermission("view_payments"), getPayments);
+router.get("/booking/:booking_id", ...hasPermission("view_payments"), getPaymentsByBooking);
+router.post("/", ...hasPermission("create_payments"), validatePayment, createPayment);
+router.delete("/:id", ...hasPermission("create_payments"), deletePayment);
 
 module.exports = router;

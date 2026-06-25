@@ -47,7 +47,7 @@ const loginUser = async (req, res) => {
     // Regular user
     const { data: user } = await supabaseAdmin
       .from("users")
-      .select("id, name, email, role, hall_id, multi_hall_enabled, different_staff_management, status")
+      .select("id, name, email, role, hall_id, multi_hall_enabled, different_staff_management, status, permissions")
       .eq("auth_user_id", authUserId)
       .maybeSingle();
 

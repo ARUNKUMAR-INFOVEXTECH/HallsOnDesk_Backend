@@ -137,7 +137,7 @@ const createBooking = async (req, res) => {
 
     const bodyTaxEnabled = req.body.tax_enabled !== undefined ? req.body.tax_enabled : req.body.taxEnabled;
     const bodyTaxPercentage = req.body.tax_percentage !== undefined ? req.body.tax_percentage : req.body.taxPercentage;
-    const bodySubtotal = req.body.subtotal !== undefined ? req.body.subtotal : req.body.subtotal;
+    const bodySubtotal = req.body.subtotal !== undefined ? req.body.subtotal : req.body.subTotal;
 
     const finalTaxEnabled = bodyTaxEnabled !== undefined ? !!bodyTaxEnabled : settings.tax_enabled;
     const finalTaxPercentage = bodyTaxPercentage !== undefined ? Number(bodyTaxPercentage) : settings.tax_percentage;
@@ -161,7 +161,7 @@ const createBooking = async (req, res) => {
       .gte("end_date", today)
       .maybeSingle();
 
-    if (sub?.packages?.max_bookings !== null && sub?.packages?.max_bookings !== undefined) {
+    if (sub?.packages?.max_bookings !== null && sub?.packages?.max_bookings !== undefined && sub?.packages?.max_bookings > 0) {
       const { count: bookingCount } = await supabaseAdmin
         .from("bookings")
         .select("id", { count: "exact", head: true })
@@ -438,7 +438,7 @@ const updateBooking = async (req, res) => {
     // Recalculate Billing and Tax snapshot
     const bodyTaxEnabled = req.body.tax_enabled !== undefined ? req.body.tax_enabled : req.body.taxEnabled;
     const bodyTaxPercentage = req.body.tax_percentage !== undefined ? req.body.tax_percentage : req.body.taxPercentage;
-    const bodySubtotal = req.body.subtotal !== undefined ? req.body.subtotal : req.body.subtotal;
+    const bodySubtotal = req.body.subtotal !== undefined ? req.body.subtotal : req.body.subTotal;
 
     const finalTaxEnabled = bodyTaxEnabled !== undefined
       ? !!bodyTaxEnabled

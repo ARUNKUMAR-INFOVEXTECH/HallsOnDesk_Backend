@@ -107,7 +107,7 @@ const createHall = async (req, res) => {
 const getAllHalls = async (req, res) => {
   const { data, error } = await supabaseAdmin
     .from("marriage_halls")
-    .select(`*, hall_subscriptions ( id, status, start_date, end_date, payment_status, packages ( name, price, billing_cycle ) )`)
+    .select(`*, hall_subscriptions ( id, status, start_date, end_date, payment_status, packages ( name, price, billing_cycle, setup_fee ) )`)
     .order("created_at", { ascending: false });
 
   if (error) return res.status(500).json({ message: error.message });
@@ -119,7 +119,7 @@ const getHallById = async (req, res) => {
 
   const { data, error } = await supabaseAdmin
     .from("marriage_halls")
-    .select(`*, hall_subscriptions ( id, status, start_date, end_date, payment_status, packages ( name, price, billing_cycle, features ) ), users ( id, name, email, role, created_at, backup_password_enc )`)
+    .select(`*, hall_subscriptions ( id, status, start_date, end_date, payment_status, packages ( name, price, billing_cycle, features, setup_fee ) ), users ( id, name, email, role, created_at, backup_password_enc )`)
     .eq("id", id)
     .single();
 
@@ -202,7 +202,7 @@ const getAdminDashboardStats = async (req, res) => {
 
     const [hallsRes, subsRes, usersRes, paymentsRes, activitiesRes] = await Promise.all([
       supabaseAdmin.from("marriage_halls").select("id, status, created_at"),
-      supabaseAdmin.from("hall_subscriptions").select("id, status, end_date, hall_id, packages(name, price)"),
+      supabaseAdmin.from("hall_subscriptions").select("id, status, end_date, hall_id, packages(name, price, setup_fee)"),
       supabaseAdmin.from("users").select("id, created_at"),
       supabaseAdmin.from("payments").select("amount, payment_date"),
       supabaseAdmin.from("activity_logs").select("id, action, description, created_at, user_name, hall_id").order("created_at", { ascending: false }).limit(8),
@@ -376,7 +376,7 @@ const getAdminAnalytics = async (req, res) => {
     // Parallel fetches
     const [hallsRes, subsRes, allPaymentsRes, hallPaymentsRes, hallsWithSubsRes] = await Promise.all([
       supabaseAdmin.from("marriage_halls").select("id, city, status, created_at"),
-      supabaseAdmin.from("hall_subscriptions").select("id, status, hall_id, packages(name, price)"),
+      supabaseAdmin.from("hall_subscriptions").select("id, status, hall_id, packages(name, price, setup_fee)"),
       supabaseAdmin
         .from("payments")
         .select("amount, payment_date")
@@ -387,7 +387,7 @@ const getAdminAnalytics = async (req, res) => {
         .select("amount, hall_id, marriage_halls(hall_name, city)"),
       supabaseAdmin
         .from("marriage_halls")
-        .select("id, city, status, hall_subscriptions(status, packages(price))"),
+        .select("id, city, status, hall_subscriptions(status, packages(price, setup_fee))"),
     ]);
 
     const halls = hallsRes.data || [];
@@ -556,7 +556,7 @@ const getHallStats = async (req, res) => {
       supabaseAdmin.from("payments").select("amount").eq("hall_id", id),
       supabaseAdmin
         .from("hall_subscriptions")
-        .select("*, packages(name, price, max_users, max_bookings)")
+        .select("*, packages(name, price, max_users, max_bookings, setup_fee)")
         .eq("hall_id", id)
         .order("created_at", { ascending: false })
         .limit(1)
@@ -619,7 +619,7 @@ const getHallActivity = async (req, res) => {
         .limit(20),
       supabaseAdmin
         .from("hall_subscriptions")
-        .select("id, status, start_date, end_date, created_at, packages(name)")
+        .select("id, status, start_date, end_date, created_at, packages(name, setup_fee)")
         .eq("hall_id", id)
         .order("created_at", { ascending: false }),
     ]);
@@ -1000,7 +1000,7 @@ const getPendingSubscriptionPayments = async (req, res) => {
       .select(`
         *,
         marriage_halls(hall_name, owner_name),
-        packages(name, price, billing_cycle)
+        packages(name, price, billing_cycle, setup_fee)
       `)
       .eq("status", status)
       .order("created_at", { ascending: false });
@@ -1026,7 +1026,7 @@ const verifySubscriptionPayment = async (req, res) => {
     // 1. Fetch payment
     const { data: payment, error: fetchErr } = await supabaseAdmin
       .from("subscription_payments")
-      .select("*, packages(name, price, billing_cycle)")
+      .select("*, packages(name, price, billing_cycle, setup_fee)")
       .eq("id", id)
       .maybeSingle();
 
@@ -1204,6 +1204,140 @@ const sendTestEmail = async (req, res) => {
   }
 };
 
+const getHallSubscriptionPayments = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, error } = await supabaseAdmin
+      .from("subscription_payments")
+      .select("*, packages(name, price, billing_cycle)")
+      .eq("hall_id", id)
+      .order("created_at", { ascending: false });
+
+    if (error) return res.status(500).json({ message: error.message });
+    res.json(data || []);
+  } catch (err) {
+    console.error("getHallSubscriptionPayments error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+const recordManualSubscriptionPayment = async (req, res) => {
+  try {
+    const { id: hall_id } = req.params;
+    const { package_id, amount, payment_method = "bank_transfer", transaction_ref_no, notes = "" } = req.body;
+
+    if (!package_id || !amount) {
+      return res.status(400).json({ message: "package_id and amount are required" });
+    }
+
+    // 1. Get package details for billing cycle info
+    const { data: pkg, error: pkgErr } = await supabaseAdmin
+      .from("packages")
+      .select("name, billing_cycle")
+      .eq("id", package_id)
+      .maybeSingle();
+
+    if (pkgErr || !pkg) {
+      return res.status(404).json({ message: "Selected package plan not found" });
+    }
+
+    // 2. Insert subscription payment record directly as approved
+    const generatedRef = transaction_ref_no || `INF-MANUAL-${Date.now().toString().slice(-6)}`;
+    const today = new Date();
+    const todayStr = getLocalDate(today);
+
+    const { data: newPayment, error: payErr } = await supabaseAdmin
+      .from("subscription_payments")
+      .insert([{
+        hall_id,
+        package_id,
+        amount: parseFloat(amount),
+        payment_method,
+        transaction_ref_no: generatedRef,
+        status: "approved",
+        notes: notes || "Recorded manually by Infovex Admin.",
+        verified_at: today.toISOString(),
+        verified_by: req.user.id
+      }])
+      .select()
+      .single();
+
+    if (payErr) {
+      console.error("recordManualSubscriptionPayment insert payment error:", payErr);
+      return res.status(500).json({ message: payErr.message });
+    }
+
+    // 3. Compute extended subscription end date
+    let newEndDate = new Date();
+
+    const { data: activeSub } = await supabaseAdmin
+      .from("hall_subscriptions")
+      .select("end_date, status")
+      .eq("hall_id", hall_id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (activeSub && (activeSub.status === "active" || activeSub.status === "trial") && activeSub.end_date >= todayStr) {
+      newEndDate = new Date(activeSub.end_date);
+    }
+
+    const cycle = pkg.billing_cycle || "monthly";
+    if (cycle === "annual" || cycle === "yearly") {
+      newEndDate.setFullYear(newEndDate.getFullYear() + 1);
+    } else {
+      newEndDate.setMonth(newEndDate.getMonth() + 1);
+    }
+
+    const startDateStr = todayStr;
+    const endDateStr = getLocalDate(newEndDate);
+
+    // 4. Create new subscription contract contract
+    const { error: subErr } = await supabaseAdmin
+      .from("hall_subscriptions")
+      .insert([{
+        hall_id: hall_id,
+        package_id: package_id,
+        start_date: startDateStr,
+        end_date: endDateStr,
+        status: "active",
+        payment_status: "paid"
+      }]);
+
+    if (subErr) {
+      console.error("recordManualSubscriptionPayment create subscription error:", subErr);
+      return res.status(500).json({ message: subErr.message });
+    }
+
+    // 5. Ensure hall is marked active
+    await supabaseAdmin
+      .from("marriage_halls")
+      .update({ status: "active" })
+      .eq("id", hall_id);
+
+    // 6. Log operator activity
+    const { logActivity } = require("./activityLogController");
+    await logActivity({
+      hall_id,
+      user_id: req.user.id,
+      user_name: req.user.name,
+      action: "subscription.manual_payment_recorded",
+      entity_type: "subscription_payment",
+      description: `Manually recorded subscription payment of ₹${amount} for plan "${pkg.name}". Reference: ${generatedRef}.`,
+      metadata: { payment_id: newPayment.id, amount, transaction_ref_no: generatedRef }
+    });
+
+    res.status(201).json({
+      message: "Manual payment recorded and subscription contract extended successfully.",
+      data: newPayment
+    });
+
+  } catch (err) {
+    console.error("recordManualSubscriptionPayment error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 module.exports = {
   createHall,
   getAllHalls,
@@ -1227,4 +1361,6 @@ module.exports = {
   getPendingSubscriptionPayments,
   verifySubscriptionPayment,
   sendTestEmail,
+  getHallSubscriptionPayments,
+  recordManualSubscriptionPayment,
 };

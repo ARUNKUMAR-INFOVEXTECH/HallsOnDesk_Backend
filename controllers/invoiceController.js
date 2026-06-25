@@ -83,8 +83,8 @@ const createInvoice = async (req, res) => {
       ? booking.tax_enabled
       : settings.tax_enabled;
 
-    const tax_percentage = booking.tax_enabled !== null && booking.tax_enabled !== undefined
-      ? Number(booking.tax_percentage || 0)
+    const tax_percentage = booking.tax_percentage !== null && booking.tax_percentage !== undefined
+      ? Number(booking.tax_percentage)
       : settings.tax_percentage;
 
     const tax_label = booking.tax_label || settings.tax_label || "GST";

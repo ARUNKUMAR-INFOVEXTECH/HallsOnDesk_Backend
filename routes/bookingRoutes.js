@@ -1,8 +1,8 @@
 const express = require("express");
 const router = express.Router();
 const authMiddleware = require("../middleware/authMiddleware");
-const roleMiddleware = require("../middleware/roleMiddleware");
 const subscriptionMiddleware = require("../middleware/Subscriptionmiddleware");
+const permissionMiddleware = require("../middleware/permissionMiddleware");
 const {
   checkAvailability,
   createBooking,
@@ -23,21 +23,21 @@ const {
 const { validateBooking } = require("../middleware/validationMiddleware");
 
 const isAuthenticated = [authMiddleware, subscriptionMiddleware];
-const isOwnerOrManager = [authMiddleware, roleMiddleware(["owner", "manager"]), subscriptionMiddleware];
+const hasPermission = (perm) => [authMiddleware, subscriptionMiddleware, permissionMiddleware(perm)];
 
 router.get("/check-availability", ...isAuthenticated, checkAvailability);
-router.get("/stats", ...isOwnerOrManager, getBookingStats);
-router.get("/", ...isAuthenticated, getBookings);
-router.get("/:id", ...isAuthenticated, getBookingById);
-router.post("/", ...isOwnerOrManager, validateBooking, createBooking);
-router.put("/:id", ...isOwnerOrManager, validateBooking, updateBooking);
-router.patch("/:id/cancel", ...isOwnerOrManager, cancelBooking);
-router.delete("/:id", ...isOwnerOrManager, deleteBooking);
+router.get("/stats", ...hasPermission("view_bookings"), getBookingStats);
+router.get("/", ...hasPermission("view_bookings"), getBookings);
+router.get("/:id", ...hasPermission("view_bookings"), getBookingById);
+router.post("/", ...hasPermission("create_bookings"), validateBooking, createBooking);
+router.put("/:id", ...hasPermission("edit_bookings"), validateBooking, updateBooking);
+router.patch("/:id/cancel", ...hasPermission("edit_bookings"), cancelBooking);
+router.delete("/:id", ...hasPermission("delete_bookings"), deleteBooking);
 
 // Vendor allocations routes
-router.get("/:bookingId/vendors", ...isAuthenticated, getBookingVendors);
-router.post("/:bookingId/vendors", ...isOwnerOrManager, allocateVendor);
-router.put("/:bookingId/vendors/:vendorId", ...isOwnerOrManager, updateAllocation);
-router.delete("/:bookingId/vendors/:vendorId", ...isOwnerOrManager, deallocateVendor);
+router.get("/:bookingId/vendors", ...hasPermission("view_bookings"), getBookingVendors);
+router.post("/:bookingId/vendors", ...hasPermission("edit_bookings"), allocateVendor);
+router.put("/:bookingId/vendors/:vendorId", ...hasPermission("edit_bookings"), updateAllocation);
+router.delete("/:bookingId/vendors/:vendorId", ...hasPermission("edit_bookings"), deallocateVendor);
 
 module.exports = router;

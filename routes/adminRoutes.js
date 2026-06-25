@@ -25,6 +25,8 @@ const {
   getPendingSubscriptionPayments,
   verifySubscriptionPayment,
   sendTestEmail,
+  getHallSubscriptionPayments,
+  recordManualSubscriptionPayment,
 } = require("../controllers/adminController");
 
 const isSuperAdmin = [authMiddleware, roleMiddleware("super_admin")];
@@ -51,6 +53,8 @@ router.get("/halls", ...isSuperAdmin, getAllHalls);
 router.get("/halls/:id", ...isSuperAdmin, getHallById);
 router.get("/halls/:id/stats", ...isSuperAdmin, getHallStats);
 router.get("/halls/:id/activity", ...isSuperAdmin, getHallActivity);
+router.get("/halls/:id/payments", ...isSuperAdmin, getHallSubscriptionPayments);
+router.post("/halls/:id/payments", ...isSuperAdmin, recordManualSubscriptionPayment);
 router.patch("/halls/:id/suspend", ...isSuperAdmin, suspendHall);
 router.patch("/halls/:id/activate", ...isSuperAdmin, activateHall);
 router.delete("/halls/:id", ...isSuperAdmin, deleteHall);

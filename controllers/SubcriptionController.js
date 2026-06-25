@@ -7,7 +7,7 @@ const getSubscription = async (req, res) => {
 
   const { data, error } = await supabaseAdmin
     .from("hall_subscriptions")
-    .select(`*, packages(name, price, billing_cycle, features, max_users, max_bookings)`)
+    .select(`*, packages(name, price, billing_cycle, features, max_users, max_bookings, setup_fee)`)
     .eq("hall_id", hall_id)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -218,7 +218,7 @@ const getSubscriptionPaymentHistory = async (req, res) => {
     const hall_id = req.user.hall_id;
     const { data, error } = await supabaseAdmin
       .from("subscription_payments")
-      .select("*, packages(name)")
+      .select("*, packages(name, setup_fee)")
       .eq("hall_id", hall_id)
       .order("created_at", { ascending: false });
 
