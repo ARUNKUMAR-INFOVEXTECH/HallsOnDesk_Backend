@@ -90,8 +90,7 @@ const createStaff = async (req, res) => {
     }
 
     const maxUsers = sub.packages?.max_users;
-    const planName = (sub.packages?.name || "").toLowerCase();
-    const hasPayroll = req.user.role === "super_admin" || planName.includes("transformation") || planName.includes("pro") || planName.includes("deluxe");
+    const hasPayroll = false; // Payroll feature disabled universally
 
     if (salary !== undefined && Number(salary) > 0 && !hasPayroll) {
       return res.status(403).json({ message: "Salary/Payroll feature is locked under your current SaaS plan." });
@@ -398,8 +397,7 @@ const updateStaff = async (req, res) => {
       .limit(1)
       .maybeSingle();
 
-    const planNameVal = (subVal?.packages?.name || "").toLowerCase();
-    const hasPayrollVal = req.user.role === "super_admin" || planNameVal.includes("transformation") || planNameVal.includes("pro") || planNameVal.includes("deluxe");
+    const hasPayrollVal = false; // Payroll feature disabled universally
 
     if (salary !== undefined) {
       if (!hasPayrollVal && Number(salary) > 0) {

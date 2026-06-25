@@ -35,10 +35,19 @@ module.exports = (feature) => {
     let isAllowed = false;
     switch (feature) {
       case "enquiries":
+        // Allowed in Digital Transformation and Premium plans
+        isAllowed = planName.includes("transformation") || planName.includes("premium") || planName.includes("pro") || planName.includes("deluxe");
+        break;
       case "vendors":
+        // Allowed in Premium plans only (restricted in Digital Transformation plan)
+        isAllowed = planName.includes("premium");
+        break;
       case "payroll":
+        // Payroll module is removed universally
+        isAllowed = false;
+        break;
       case "reports":
-        // Requires a Digital Transformation plan (contains 'transformation', 'pro', 'deluxe')
+        // Requires a Digital Transformation plan
         isAllowed = planName.includes("transformation") || planName.includes("pro") || planName.includes("deluxe");
         break;
       case "multihall":
