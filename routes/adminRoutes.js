@@ -44,9 +44,11 @@ router.patch("/tickets/:id", ...isSuperAdmin, updateAdminTicketStatus);
 router.post("/tickets/:id/messages", ...isSuperAdmin, addAdminTicketMessage);
 
 // SaaS Subscription Payments Verification
+const { getSubscriptionInvoiceHtml } = require("../controllers/SubcriptionController");
 router.get("/billing/pending", ...isSuperAdmin, getPendingSubscriptionPayments);
 router.post("/billing/:id/verify", ...isSuperAdmin, verifySubscriptionPayment);
 router.post("/billing/test-email", ...isSuperAdmin, sendTestEmail);
+router.get("/billing/payments/:id/html", ...isSuperAdmin, getSubscriptionInvoiceHtml);
 
 router.post("/halls", ...isSuperAdmin, createHall);
 router.get("/halls", ...isSuperAdmin, getAllHalls);

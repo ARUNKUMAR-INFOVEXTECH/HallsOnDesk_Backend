@@ -8,7 +8,8 @@ const {
   changePackage,
   requestSubscriptionChange,
   submitSubscriptionPayment,
-  getSubscriptionPaymentHistory
+  getSubscriptionPaymentHistory,
+  getSubscriptionInvoiceHtml
 } = require("../controllers/SubcriptionController");
 
 const isSuperAdmin = [authMiddleware, roleMiddleware("super_admin")];
@@ -25,6 +26,7 @@ router.post("/request-change", authMiddleware, requestSubscriptionChange);
 // Owner subscription payment remittance submission & history
 router.post("/pay", authMiddleware, submitSubscriptionPayment);
 router.get("/payments/history", authMiddleware, getSubscriptionPaymentHistory);
+router.get("/payments/:id/html", authMiddleware, getSubscriptionInvoiceHtml);
 
 // Super admin manages subscriptions
 router.get("/:hall_id", ...isSuperAdmin, getSubscription);
