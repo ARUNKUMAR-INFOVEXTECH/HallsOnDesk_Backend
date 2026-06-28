@@ -1553,20 +1553,25 @@ const updateSetupFeePayment = async (req, res) => {
   }
 };
 
-// Generate custom invoice HTML on-the-fly
 const generateCustomAdminInvoice = async (req, res) => {
   try {
     const {
       hall_id,
       invoice_no,
       invoice_date,
+      due_date,
       items = [],
       tax_enabled = false,
+      tax_percentage = 18,
       payment_method = "bank_transfer",
       transaction_ref_no = "",
       notes = "",
       amount_paid = 0,
-      balance_due
+      balance_due,
+      bill_to_name,
+      bill_to_phone,
+      bill_to_email,
+      bill_to_address
     } = req.body;
 
     if (!hall_id || items.length === 0) {
@@ -1590,6 +1595,7 @@ const generateCustomAdminInvoice = async (req, res) => {
     const { data: settings } = await supabaseAdmin
       .from("admin_settings")
       .select("*")
+      .order("updated_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
@@ -1600,14 +1606,15 @@ const generateCustomAdminInvoice = async (req, res) => {
     const invoicePrefix = settings?.invoice_prefix || "INF-GEN-";
 
     const hallName = hall?.hall_name || "Venue Host";
-    const ownerName = hall?.owner_name || "Hall Owner";
-    const clientAddress = profile?.address || "";
-    const clientCity = profile?.city || "";
-    const clientState = profile?.state || "";
+    const ownerName = bill_to_name || hall?.owner_name || "Hall Owner";
+    const clientAddress = bill_to_address || profile?.address || "";
+    const clientCity = !bill_to_address ? (profile?.city || "") : "";
+    const clientState = !bill_to_address ? (profile?.state || "") : "";
     const clientGstin = profile?.gst_number || "N/A";
 
     const invNo = invoice_no || `${invoicePrefix}${Date.now().toString().slice(-6)}`;
     const invDate = invoice_date ? new Date(invoice_date).toLocaleDateString("en-GB") : new Date().toLocaleDateString("en-GB");
+    const dueDateFormatted = due_date ? new Date(due_date).toLocaleDateString("en-GB") : "";
 
     // Calculations
     let subtotal = 0;
@@ -1625,15 +1632,20 @@ const generateCustomAdminInvoice = async (req, res) => {
     });
 
     const taxEnabled = !!tax_enabled;
+    const taxRatePercent = parseFloat(tax_percentage !== undefined ? tax_percentage : 18);
+    const taxRate = taxRatePercent / 100;
     let cgst = 0;
     let sgst = 0;
     let totalAmount = subtotal;
 
     if (taxEnabled) {
-      cgst = subtotal * 0.09;
-      sgst = subtotal * 0.09;
+      cgst = subtotal * (taxRate / 2);
+      sgst = subtotal * (taxRate / 2);
       totalAmount = subtotal + cgst + sgst;
     }
+
+    const amtPaidVal = parseFloat(amount_paid || 0);
+    const balDueVal = balance_due !== undefined ? parseFloat(balance_due) : Math.max(0, totalAmount - amtPaidVal);
 
     const symbol = "₹";
     const fmt = (val) => `${symbol}${Number(val).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -1642,12 +1654,12 @@ const generateCustomAdminInvoice = async (req, res) => {
     if (taxEnabled) {
       taxRows = `
         <tr>
-          <td>CGST (9%):</td>
-          <td style="text-align: right; font-family: monospace;">${fmt(cgst)}</td>
+          <td style="padding: 6px 0; color: #64748b;">CGST (${taxRatePercent / 2}%):</td>
+          <td style="padding: 6px 0; text-align: right; font-family: monospace; color: #334155; font-weight: 600;">${fmt(cgst)}</td>
         </tr>
         <tr>
-          <td>SGST (9%):</td>
-          <td style="text-align: right; font-family: monospace;">${fmt(sgst)}</td>
+          <td style="padding: 6px 0; color: #64748b;">SGST (${taxRatePercent / 2}%):</td>
+          <td style="padding: 6px 0; text-align: right; font-family: monospace; color: #334155; font-weight: 600;">${fmt(sgst)}</td>
         </tr>
       `;
     }
@@ -1668,22 +1680,22 @@ const generateCustomAdminInvoice = async (req, res) => {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Custom Invoice - ${invNo}</title>
+  <title>Invoice - ${invNo}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
     
     @page {
       size: auto;
-      margin: 15mm;
+      margin: 10mm;
     }
 
     body {
       font-family: 'Plus Jakarta Sans', -apple-system, sans-serif;
-      color: #1e293b;
+      color: #0f172a;
       background-color: #ffffff;
       margin: 0;
       padding: 0;
-      line-height: 1.5;
+      line-height: 1.4;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
     }
@@ -1691,26 +1703,56 @@ const generateCustomAdminInvoice = async (req, res) => {
     .invoice-container {
       max-width: 800px;
       margin: 0 auto;
-      padding: 10px;
+      padding: 15px;
+    }
+
+    .brand-accent-bar {
+      height: 6px;
+      background: linear-gradient(90deg, #4f46e5 0%, #062089 100%);
+      border-radius: 4px;
+      margin-bottom: 24px;
     }
 
     .header-table {
       width: 100%;
       border-collapse: collapse;
-      margin-bottom: 30px;
+      margin-bottom: 24px;
     }
 
     .header-table td {
       vertical-align: top;
     }
 
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-badge {
+      height: 36px;
+      width: 36px;
+      background: #062089;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #ffffff;
+      font-weight: 800;
+      font-size: 18px;
+    }
+
+    .logo-text-block {
+      display: flex;
+      flex-direction: column;
+    }
+
     .logo-text {
       font-size: 20px;
       font-weight: 800;
-      color: #4f46e5;
+      color: #062089;
+      line-height: 1.1;
       letter-spacing: -0.5px;
-      margin: 0;
-      line-height: 1;
     }
 
     .logo-sub {
@@ -1718,8 +1760,7 @@ const generateCustomAdminInvoice = async (req, res) => {
       color: #64748b;
       font-weight: 600;
       text-transform: uppercase;
-      letter-spacing: 0.5px;
-      margin-top: 2px;
+      letter-spacing: 1px;
     }
 
     .invoice-title-block {
@@ -1727,29 +1768,72 @@ const generateCustomAdminInvoice = async (req, res) => {
     }
 
     .invoice-title {
-      font-size: 26px;
+      font-size: 24px;
       font-weight: 800;
-      color: #4f46e5;
+      color: #0f172a;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      margin: 0;
+      margin: 0 0 6px 0;
     }
 
     .meta-details {
-      margin-top: 8px;
       font-size: 11px;
       color: #475569;
       font-weight: 500;
+      line-height: 1.6;
     }
 
     .meta-details strong {
       color: #0f172a;
     }
 
+    .status-badge-container {
+      margin-top: 8px;
+    }
+
+    .status-badge-paid {
+      background: #dcfce7;
+      color: #15803d;
+      border: 1px solid #bbf7d0;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-weight: 800;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: inline-block;
+    }
+
+    .status-badge-partial {
+      background: #fef3c7;
+      color: #b45309;
+      border: 1px solid #fde68a;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-weight: 800;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: inline-block;
+    }
+
+    .status-badge-unpaid {
+      background: #ffe4e6;
+      color: #b91c1c;
+      border: 1px solid #fecdd3;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-weight: 800;
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: inline-block;
+    }
+
     .address-table {
       width: 100%;
       border-collapse: collapse;
-      margin-bottom: 35px;
+      margin-bottom: 28px;
     }
 
     .address-table td {
@@ -1757,8 +1841,16 @@ const generateCustomAdminInvoice = async (req, res) => {
       vertical-align: top;
     }
 
-    .address-block {
-      padding-right: 20px;
+    .address-block-left {
+      border-left: 3px solid #062089;
+      padding-left: 14px;
+      margin-right: 14px;
+    }
+
+    .address-block-right {
+      border-left: 3px solid #64748b;
+      padding-left: 14px;
+      margin-left: 14px;
     }
 
     .address-title {
@@ -1767,27 +1859,28 @@ const generateCustomAdminInvoice = async (req, res) => {
       color: #94a3b8;
       text-transform: uppercase;
       letter-spacing: 1px;
-      margin-bottom: 8px;
+      margin-bottom: 6px;
     }
 
     .address-name {
-      font-size: 14px;
-      font-weight: 700;
+      font-size: 13px;
+      font-weight: 800;
       color: #0f172a;
       margin: 0 0 4px 0;
     }
 
     .address-text {
-      font-size: 12px;
+      font-size: 11px;
       color: #475569;
       margin: 0;
       font-weight: 500;
+      line-height: 1.5;
     }
 
     .items-table {
       width: 100%;
       border-collapse: collapse;
-      margin-bottom: 30px;
+      margin-bottom: 24px;
     }
 
     .items-table th {
@@ -1797,15 +1890,16 @@ const generateCustomAdminInvoice = async (req, res) => {
       font-weight: 800;
       text-transform: uppercase;
       letter-spacing: 0.5px;
-      padding: 12px 16px;
+      padding: 10px 14px;
       text-align: left;
       border-bottom: 2px solid #e2e8f0;
     }
 
     .items-table td {
-      padding: 16px;
-      font-size: 12px;
+      padding: 14px;
+      font-size: 11px;
       border-bottom: 1px solid #f1f5f9;
+      color: #334155;
     }
 
     .item-desc {
@@ -1813,75 +1907,108 @@ const generateCustomAdminInvoice = async (req, res) => {
       color: #0f172a;
     }
 
-    .totals-table {
-      width: 40%;
-      margin-left: auto;
-      border-collapse: collapse;
-      margin-bottom: 40px;
-    }
-
-    .totals-table td {
-      padding: 8px 16px;
-      font-size: 12px;
-      font-weight: 500;
-      color: #475569;
-    }
-
-    .totals-table tr.grand-total {
-      border-top: 2px solid #e2e8f0;
-      font-size: 14px;
-      font-weight: 800;
-      color: #0f172a;
-    }
-
-    .totals-table tr.grand-total td {
-      padding-top: 12px;
-      font-weight: 800;
-      color: #0f172a;
-    }
-
-    .footer-note {
-      font-size: 10px;
-      color: #94a3b8;
-      text-align: center;
-      margin-top: 50px;
-      font-weight: 600;
-      border-top: 1px solid #f1f5f9;
-      padding-top: 15px;
-    }
-
-    .payment-info-box {
+    .payment-info-card {
       background-color: #f8fafc;
-      border: 1px dashed #cbd5e1;
-      border-radius: 8px;
-      padding: 15px;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 14px;
       font-size: 11px;
       color: #475569;
-      margin-bottom: 20px;
+      line-height: 1.6;
     }
 
     .payment-info-title {
       font-weight: 800;
       color: #0f172a;
       text-transform: uppercase;
-      margin-bottom: 6px;
+      margin-bottom: 8px;
+      font-size: 10px;
+      letter-spacing: 0.5px;
+    }
+
+    .totals-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    .totals-table td {
+      padding: 6px 14px;
+      font-size: 11px;
+      font-weight: 500;
+      color: #475569;
+    }
+
+    .totals-table tr.total-billed-row {
+      border-top: 1px solid #cbd5e1;
+      font-size: 12px;
+      font-weight: bold;
+    }
+
+    .totals-table tr.total-billed-row td {
+      padding-top: 10px;
+      color: #0f172a;
+      font-weight: 800;
+    }
+
+    .totals-table tr.amount-paid-row td {
+      color: #16a34a;
+      font-weight: 700;
+    }
+
+    .totals-table tr.balance-due-row td {
+      font-weight: 800;
+    }
+
+    .balance-due-pill {
+      background: #ffe4e6;
+      color: #b91c1c;
+      border: 1px solid #fecdd3;
+      padding: 4px 10px;
+      border-radius: 6px;
+      display: inline-block;
+      font-family: monospace;
+    }
+
+    .balance-due-pill.paid {
+      background: #dcfce7;
+      color: #15803d;
+      border: 1px solid #bbf7d0;
+    }
+
+    .footer-note {
+      font-size: 10px;
+      color: #94a3b8;
+      text-align: center;
+      margin-top: 48px;
+      font-weight: 600;
+      border-top: 1px solid #f1f5f9;
+      padding-top: 12px;
     }
 
     @media print {
       body {
         margin: 0;
+        background-color: #ffffff;
+      }
+      .invoice-container {
+        padding: 0;
+      }
+      .brand-accent-bar {
+        height: 4px;
       }
     }
   </style>
 </head>
 <body>
   <div class="invoice-container">
+    <div class="brand-accent-bar"></div>
+
     <table class="header-table">
       <tr>
         <td>
-          <div style="display: flex; align-items: center; gap: 10px;">
-            <img src="/logo.png" alt="Logo" style="height: 38px; object-fit: contain;">
-            <div>
+          <div class="logo-container">
+            <div class="logo-badge">H</div>
+            <div class="logo-text-block">
               <div class="logo-text">Infovex Halls</div>
               <div class="logo-sub">Venue CRM & ERP</div>
             </div>
@@ -1892,7 +2019,18 @@ const generateCustomAdminInvoice = async (req, res) => {
           <div class="meta-details">
             <div>Invoice No: <strong>${invNo}</strong></div>
             <div>Date: <strong>${invDate}</strong></div>
-            <div style="margin-top: 6px;"><span style="background: #e6f4ea; color: #137333; border: 1px solid #c2e7c9; padding: 4px 10px; border-radius: 12px; font-weight: bold; font-size: 11px; text-transform: uppercase;">GENERATED</span></div>
+            ${dueDateFormatted ? `<div>Due Date: <strong>${dueDateFormatted}</strong></div>` : ""}
+            <div class="status-badge-container">
+              ${(() => {
+                if (balDueVal <= 0) {
+                  return '<span class="status-badge-paid">Paid</span>';
+                } else if (amtPaidVal > 0) {
+                  return '<span class="status-badge-partial">Partially Paid</span>';
+                } else {
+                  return '<span class="status-badge-unpaid">Unpaid</span>';
+                }
+              })()}
+            </div>
           </div>
         </td>
       </tr>
@@ -1901,7 +2039,7 @@ const generateCustomAdminInvoice = async (req, res) => {
     <table class="address-table">
       <tr>
         <td>
-          <div class="address-block">
+          <div class="address-block-left">
             <div class="address-title">Billed By</div>
             <div class="address-name">${companyName}</div>
             <div class="address-text">
@@ -1912,11 +2050,13 @@ const generateCustomAdminInvoice = async (req, res) => {
           </div>
         </td>
         <td>
-          <div class="address-block">
+          <div class="address-block-right">
             <div class="address-title">Billed To</div>
             <div class="address-name">${hallName}</div>
             <div class="address-text">
               Proprietor: ${ownerName}<br>
+              ${bill_to_phone ? `Phone: ${bill_to_phone}<br>` : ""}
+              ${bill_to_email ? `Email: ${bill_to_email}<br>` : ""}
               ${clientAddress ? `${clientAddress}, ` : ""}${clientCity ? `${clientCity}, ` : ""}${clientState}<br>
               GSTIN: ${clientGstin}
             </div>
@@ -1929,9 +2069,9 @@ const generateCustomAdminInvoice = async (req, res) => {
       <thead>
         <tr>
           <th>Description</th>
-          <th style="text-align: right; width: 100px;">Qty</th>
-          <th style="text-align: right; width: 150px;">Rate</th>
-          <th style="text-align: right; width: 150px;">Amount</th>
+          <th style="text-align: right; width: 80px;">Qty</th>
+          <th style="text-align: right; width: 130px;">Rate</th>
+          <th style="text-align: right; width: 130px;">Amount</th>
         </tr>
       </thead>
       <tbody>
@@ -1941,42 +2081,37 @@ const generateCustomAdminInvoice = async (req, res) => {
 
     <table style="width: 100%; border-collapse: collapse;">
       <tr>
-        <td style="width: 55%; vertical-align: top;">
-          <div class="payment-info-box">
+        <td style="width: 52%; vertical-align: top;">
+          <div class="payment-info-card">
             <div class="payment-info-title">Transaction & Remittance Details</div>
-            <div>Payment Method: <strong style="text-transform: uppercase;">${payment_method}</strong></div>
-            ${transaction_ref_no ? `<div>Reference / UTR: <strong style="font-family: monospace;">${transaction_ref_no}</strong></div>` : ""}
-            ${notes ? `<div style="margin-top: 6px; font-style: italic;">Notes: ${notes}</div>` : ""}
+            <div style="margin-bottom: 4px;">Payment Method: <strong style="text-transform: uppercase; color: #0f172a;">${payment_method.replace('_', ' ')}</strong></div>
+            ${transaction_ref_no ? `<div style="margin-bottom: 4px;">Reference / UTR: <strong style="font-family: monospace; color: #0f172a;">${transaction_ref_no}</strong></div>` : ""}
+            ${notes ? `<div style="margin-top: 8px; font-style: italic; color: #475569; border-left: 2px solid #cbd5e1; padding-left: 8px;">Notes: ${notes}</div>` : ""}
           </div>
         </td>
-        <td style="width: 45%; vertical-align: top;">
+        <td style="width: 48%; vertical-align: top;">
           <table class="totals-table">
             <tr>
-              <td>Subtotal:</td>
-              <td style="text-align: right; font-family: monospace;">${fmt(subtotal)}</td>
+              <td style="color: #64748b;">Subtotal:</td>
+              <td style="text-align: right; font-family: monospace; color: #334155; font-weight: 600;">${fmt(subtotal)}</td>
             </tr>
             ${taxRows}
-            <tr class="grand-total">
-              <td>Total Amount:</td>
-              <td style="text-align: right; font-family: monospace;">${fmt(totalAmount)}</td>
+            <tr class="total-billed-row">
+              <td>Total Billed:</td>
+              <td style="text-align: right; font-family: monospace; font-size: 13px;">${fmt(totalAmount)}</td>
             </tr>
-            ${(() => {
-              const amtPaidVal = parseFloat(amount_paid || 0);
-              const balDueVal = balance_due !== undefined ? parseFloat(balance_due) : Math.max(0, totalAmount - amtPaidVal);
-              if (amtPaidVal > 0 || balDueVal > 0) {
-                return `
-                  <tr style="border-top: 1px dashed #cbd5e1;">
-                    <td>Amount Paid:</td>
-                    <td style="text-align: right; color: #16a34a; font-family: monospace;">${fmt(amtPaidVal)}</td>
-                  </tr>
-                  <tr style="font-weight: bold;">
-                    <td>Balance Due:</td>
-                    <td style="text-align: right; color: #b45309; font-family: monospace;">${fmt(balDueVal)}</td>
-                  </tr>
-                `;
-              }
-              return "";
-            })()}
+            <tr class="amount-paid-row">
+              <td style="color: #16a34a; font-weight: bold;">Amount Received:</td>
+              <td style="text-align: right; font-family: monospace; font-weight: bold;">${fmt(amtPaidVal)}</td>
+            </tr>
+            <tr class="balance-due-row">
+              <td style="font-weight: 800; color: #0f172a; padding-top: 8px;">Balance Due:</td>
+              <td style="text-align: right; padding-top: 8px;">
+                <span class="balance-due-pill ${balDueVal <= 0 ? 'paid' : ''}">
+                  ${fmt(balDueVal)}
+                </span>
+              </td>
+            </tr>
           </table>
         </td>
       </tr>
@@ -1989,6 +2124,7 @@ const generateCustomAdminInvoice = async (req, res) => {
 </body>
 </html>
     `;
+
     res.setHeader("Content-Type", "text/html");
     res.send(htmlContent);
   } catch (err) {
