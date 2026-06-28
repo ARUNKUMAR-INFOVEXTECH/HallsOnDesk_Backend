@@ -662,11 +662,17 @@ const deleteBooking = async (req, res) => {
     if (findError) return res.status(500).json({ message: findError.message });
     if (!existing) return res.status(404).json({ message: "Booking not found in your hall" });
 
+    // Delete associated vendor allocations
+    await supabaseAdmin.from("booking_vendors").delete().eq("booking_id", id);
+
     // Delete associated events
     await supabaseAdmin.from("events").delete().eq("booking_id", id);
 
     // Delete associated payments
     await supabaseAdmin.from("payments").delete().eq("booking_id", id);
+
+    // Delete associated invoices
+    await supabaseAdmin.from("invoices").delete().eq("booking_id", id);
 
     // Delete booking
     const { error: deleteError } = await supabaseAdmin.from("bookings").delete().eq("id", id);
