@@ -32,6 +32,7 @@ const {
   generateCustomAdminInvoice,
   changeUserPassword,
   adjustHallSubscription,
+  exportSaaSgstr1Report,
 } = require("../controllers/adminController");
 
 const isSuperAdmin = [authMiddleware, roleMiddleware("super_admin")];
@@ -39,6 +40,7 @@ const isSuperAdmin = [authMiddleware, roleMiddleware("super_admin")];
 router.get("/stats", ...isSuperAdmin, getAggregateHallStats);
 router.get("/dashboard-stats", ...isSuperAdmin, getAdminDashboardStats);
 router.get("/analytics", ...isSuperAdmin, getAdminAnalytics);
+router.get("/export/gstr1", ...isSuperAdmin, exportSaaSgstr1Report);
 router.get("/users", ...isSuperAdmin, getAdminUsers);
 router.patch("/users/:id/status", ...isSuperAdmin, updateAdminUserStatus);
 router.post("/users/:id/reset-password", ...isSuperAdmin, resetAdminUserPassword);

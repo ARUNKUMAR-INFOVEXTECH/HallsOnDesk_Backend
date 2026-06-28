@@ -1194,6 +1194,53 @@ const deleteInvoice = async (req, res) => {
   }
 };
 
+const exportGstr1Report = async (req, res) => {
+  try {
+    const hall_id = req.user.hall_id;
+    const { from_date, to_date } = req.query;
+
+    if (!from_date || !to_date) {
+      return res.status(400).json({ message: "from_date and to_date are required" });
+    }
+
+    const { data: invoices, error } = await supabaseAdmin
+      .from("invoices")
+      .select("*")
+      .eq("hall_id", hall_id)
+      .gte("invoice_date", from_date)
+      .lte("invoice_date", to_date)
+      .order("invoice_date", { ascending: true });
+
+    if (error) return res.status(500).json({ message: error.message });
+
+    let csvContent = "Invoice Number,Invoice Date,Customer Name,Customer GSTIN,Subtotal,CGST Rate %,CGST Amount,SGST Rate %,SGST Amount,Total Invoice Value,Place of Supply,Status\n";
+
+    (invoices || []).forEach(inv => {
+      const invoiceNo = inv.invoice_number || "";
+      const date = inv.invoice_date || "";
+      const customerName = (inv.customer_name || "").replace(/"/g, '""');
+      const customerGstin = inv.customer_gstin || "URP";
+      const subtotalVal = inv.subtotal || 0;
+      const cgstRate = inv.tax_enabled ? (inv.tax_percentage / 2) : 0;
+      const cgstAmt = inv.tax_enabled ? (inv.tax_amount / 2) : 0;
+      const sgstRate = inv.tax_enabled ? (inv.tax_percentage / 2) : 0;
+      const sgstAmt = inv.tax_enabled ? (inv.tax_amount / 2) : 0;
+      const totalVal = inv.total_amount || 0;
+      const placeOfSupply = inv.customer_address ? (inv.customer_address.split(",").pop().trim()) : "Local";
+      const status = inv.status || "";
+
+      csvContent += `"${invoiceNo}","${date}","${customerName}","${customerGstin}",${subtotalVal},${cgstRate}%,${cgstAmt},${sgstRate}%,${sgstAmt},${totalVal},"${placeOfSupply}","${status}"\n`;
+    });
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename=GSTR1_Report_${from_date}_to_${to_date}.csv`);
+    res.status(200).send(csvContent);
+  } catch (err) {
+    console.error("exportGstr1Report error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 module.exports = {
   createInvoice,
   getInvoiceById,
@@ -1203,4 +1250,5 @@ module.exports = {
   getInvoiceHtml,
   createReceipt,
   deleteInvoice,
+  exportGstr1Report,
 };

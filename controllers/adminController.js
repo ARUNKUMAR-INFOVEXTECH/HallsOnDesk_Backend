@@ -2296,3 +2296,101 @@ module.exports = {
   changeUserPassword,
   adjustHallSubscription,
 };
+
+const exportSaaSgstr1Report = async (req, res) => {
+  try {
+    const { from_date, to_date } = req.query;
+
+    if (!from_date || !to_date) {
+      return res.status(400).json({ message: "from_date and to_date are required" });
+    }
+
+    const { data: payments, error } = await supabaseAdmin
+      .from("subscription_payments")
+      .select(`
+        *,
+        marriage_halls ( hall_name )
+      `)
+      .eq("status", "approved")
+      .gte("verified_at", `${from_date}T00:00:00.000Z`)
+      .lte("verified_at", `${to_date}T23:59:59.999Z`)
+      .order("verified_at", { ascending: true });
+
+    if (error) return res.status(500).json({ message: error.message });
+
+    const hallIds = [...new Set((payments || []).map(p => p.hall_id))];
+    let profilesMap = {};
+    if (hallIds.length > 0) {
+      const { data: profiles } = await supabaseAdmin
+        .from("hall_profiles")
+        .select("hall_id, gst_number, state")
+        .in("hall_id", hallIds);
+      
+      (profiles || []).forEach(p => {
+        profilesMap[p.hall_id] = p;
+      });
+    }
+
+    let csvContent = "Invoice/Transaction ID,Verification Date,Hall Name,Customer GSTIN,Subtotal,CGST Rate %,CGST Amount,SGST Rate %,SGST Amount,Total Amount,Payment Method,UTR Reference,Place of Supply\n";
+
+    (payments || []).forEach(pay => {
+      const txId = pay.id.slice(0, 8).toUpperCase();
+      const date = pay.verified_at ? pay.verified_at.split("T")[0] : "";
+      const hallName = pay.marriage_halls?.hall_name || "Unknown Hall";
+      const profile = profilesMap[pay.hall_id];
+      const customerGstin = profile?.gst_number || "URP";
+      const totalVal = parseFloat(pay.amount) || 0;
+      
+      const taxEnabled = pay.tax_enabled !== false;
+      const subtotalVal = taxEnabled ? Math.round((totalVal / 1.18) * 100) / 100 : totalVal;
+      const taxAmount = taxEnabled ? Math.round((totalVal - subtotalVal) * 100) / 100 : 0;
+      const cgstAmt = taxAmount / 2;
+      const sgstAmt = taxAmount / 2;
+      const cgstRate = taxEnabled ? 9 : 0;
+      const sgstRate = taxEnabled ? 9 : 0;
+      const placeOfSupply = profile?.state || "Local";
+
+      csvContent += `"${txId}","${date}","${hallName.replace(/"/g, '""')}","${customerGstin}",${subtotalVal},${cgstRate}%,${cgstAmt},${sgstRate}%,${sgstAmt},${totalVal},"${pay.payment_method}","${pay.transaction_ref_no}","${placeOfSupply}"\n`;
+    });
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename=SaaS_GSTR1_Report_${from_date}_to_${to_date}.csv`);
+    res.status(200).send(csvContent);
+  } catch (err) {
+    console.error("exportSaaSgstr1Report error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+module.exports = {
+  createHall,
+  getAllHalls,
+  getHallById,
+  suspendHall,
+  activateHall,
+  deleteHall,
+  getAggregateHallStats,
+  getHallStats,
+  getHallActivity,
+  getAdminDashboardStats,
+  getAdminAnalytics,
+  getAdminUsers,
+  updateAdminUserStatus,
+  resetAdminUserPassword,
+  getAdminSettings,
+  updateAdminSettings,
+  getAdminTickets,
+  updateAdminTicketStatus,
+  addAdminTicketMessage,
+  getPendingSubscriptionPayments,
+  verifySubscriptionPayment,
+  sendTestEmail,
+  getHallSubscriptionPayments,
+  recordManualSubscriptionPayment,
+  getSetupFeePayments,
+  updateSetupFeePayment,
+  generateCustomAdminInvoice,
+  changeUserPassword,
+  adjustHallSubscription,
+  exportSaaSgstr1Report,
+};

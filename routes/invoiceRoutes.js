@@ -14,6 +14,7 @@ const {
   getInvoiceHtml,
   createReceipt,
   deleteInvoice,
+  exportGstr1Report,
 } = require("../controllers/invoiceController");
 
 const isAuthenticated = [authMiddleware, subscriptionMiddleware];
@@ -22,6 +23,9 @@ const hasPermission = (perm) => [authMiddleware, subscriptionMiddleware, permiss
 // ---- Invoice list and creation ----
 router.get("/", ...hasPermission("view_payments"), getInvoices);
 router.post("/", ...hasPermission("create_payments"), createInvoice);
+
+// ---- Export GSTR-1 Report ----
+router.get("/export/gstr1", ...hasPermission("view_payments"), exportGstr1Report);
 
 // ---- Get invoice by booking (useful shortcut for booking detail page) ----
 router.get("/booking/:booking_id", ...hasPermission("view_payments"), getInvoiceByBooking);
