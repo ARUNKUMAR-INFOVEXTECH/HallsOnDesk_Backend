@@ -2007,11 +2007,7 @@ const generateCustomAdminInvoice = async (req, res) => {
       <tr>
         <td>
           <div class="logo-container">
-            <div class="logo-badge">H</div>
-            <div class="logo-text-block">
-              <div class="logo-text">Infovex Halls</div>
-              <div class="logo-sub">Venue CRM & ERP</div>
-            </div>
+            <img src="/logo.png" alt="Infovex Halls Logo" style="height: 40px; object-fit: contain;">
           </div>
         </td>
         <td class="invoice-title-block">
