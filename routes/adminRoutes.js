@@ -33,9 +33,12 @@ const {
   changeUserPassword,
   adjustHallSubscription,
   exportSaaSgstr1Report,
+  getPublicFounderSlots,
 } = require("../controllers/adminController");
 
 const isSuperAdmin = [authMiddleware, roleMiddleware("super_admin")];
+
+router.get("/public/founder-slots", getPublicFounderSlots);
 
 router.get("/stats", ...isSuperAdmin, getAggregateHallStats);
 router.get("/dashboard-stats", ...isSuperAdmin, getAdminDashboardStats);

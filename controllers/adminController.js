@@ -923,6 +923,8 @@ const getAdminSettings = async (req, res) => {
       subscriptionQrEnabled: data.subscription_qr_enabled !== undefined ? data.subscription_qr_enabled : true,
       subscriptionQrUpiId: data.subscription_qr_upi_id || "billing@infovex.com",
       emailTemplates: data.email_templates || {},
+      founderSlotsClaimed: data.founder_slots_claimed !== undefined ? data.founder_slots_claimed : 14,
+      founderSlotsTotal: data.founder_slots_total !== undefined ? data.founder_slots_total : 20,
     });
   } catch (err) {
     console.error("getAdminSettings error:", err);
@@ -944,6 +946,8 @@ const updateAdminSettings = async (req, res) => {
       subscriptionQrEnabled,
       subscriptionQrUpiId,
       emailTemplates,
+      founderSlotsClaimed,
+      founderSlotsTotal,
     } = req.body;
 
     // Fetch existing settings row to get its ID if not provided, ensuring single-row state
@@ -978,6 +982,8 @@ const updateAdminSettings = async (req, res) => {
       invoice_prefix: invoicePrefix,
       next_invoice_number: nextInvoiceNumber,
       email_templates: emailTemplates,
+      founder_slots_claimed: founderSlotsClaimed !== undefined ? Number(founderSlotsClaimed) : 14,
+      founder_slots_total: founderSlotsTotal !== undefined ? Number(founderSlotsTotal) : 20,
       updated_at: new Date().toISOString(),
     };
 
@@ -2362,6 +2368,27 @@ const exportSaaSgstr1Report = async (req, res) => {
   }
 };
 
+const getPublicFounderSlots = async (req, res) => {
+  try {
+    const { data, error } = await supabaseAdmin
+      .from("admin_settings")
+      .select("founder_slots_claimed, founder_slots_total")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) return res.status(500).json({ message: error.message });
+
+    res.json({
+      slotsClaimed: data?.founder_slots_claimed ?? 14,
+      totalSlots: data?.founder_slots_total ?? 20,
+    });
+  } catch (err) {
+    console.error("getPublicFounderSlots error:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
 module.exports = {
   createHall,
   getAllHalls,
@@ -2393,4 +2420,5 @@ module.exports = {
   changeUserPassword,
   adjustHallSubscription,
   exportSaaSgstr1Report,
+  getPublicFounderSlots,
 };
