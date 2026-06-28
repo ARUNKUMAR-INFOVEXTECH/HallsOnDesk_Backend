@@ -2,6 +2,25 @@ const { supabaseAdmin } = require("../config/supabase");
 const { getSettingsForHall } = require("./hallSettingsController");
 const { getLocalDate } = require("../utils/dateHelper");
 
+const formatToDDMMYYYY = (dateString) => {
+  if (!dateString) return "";
+  try {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+      const [year, month, day] = dateString.split("-");
+      return `${day}/${month}/${year}`;
+    }
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return dateString;
+    const day = String(d.getDate()).padStart(2, "0");
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const year = d.getFullYear();
+    return `${day}/${month}/${year}`;
+  } catch (err) {
+    return dateString;
+  }
+};
+
+
 /* ============================================================
    GENERATE NEXT INVOICE NUMBER
    Format: INV-2024-0001 (prefix from settings)
@@ -333,6 +352,12 @@ const getInvoiceHtml = async (req, res) => {
       .single();
 
     if (error) return res.status(404).json({ message: "Invoice not found" });
+
+    // Format all dates to DD/MM/YYYY for render display
+    inv.invoice_date = formatToDDMMYYYY(inv.invoice_date);
+    inv.due_date = formatToDDMMYYYY(inv.due_date);
+    inv.event_date = formatToDDMMYYYY(inv.event_date);
+    inv.event_end_date = formatToDDMMYYYY(inv.event_end_date);
 
     // Fetch active subscription, template settings, and bank details from profile
     const today = getLocalDate();
@@ -1217,7 +1242,7 @@ const exportGstr1Report = async (req, res) => {
 
     (invoices || []).forEach(inv => {
       const invoiceNo = inv.invoice_number || "";
-      const date = inv.invoice_date || "";
+      const date = formatToDDMMYYYY(inv.invoice_date);
       const customerName = (inv.customer_name || "").replace(/"/g, '""');
       const customerGstin = inv.customer_gstin || "URP";
       const subtotalVal = inv.subtotal || 0;
