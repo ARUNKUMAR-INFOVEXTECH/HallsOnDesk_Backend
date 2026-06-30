@@ -81,6 +81,26 @@ const allocateVendor = async (req, res) => {
     }
 
     const cost = Number(allocated_cost || 0);
+    const paid = Number(amount_paid || 0);
+
+    // Deduce payment status
+    let finalStatus = payment_status || "unpaid";
+    if (payment_status === undefined) {
+      if (paid >= cost && cost > 0) {
+        finalStatus = "paid";
+      } else if (paid > 0) {
+        finalStatus = "partially_paid";
+      } else {
+        finalStatus = "unpaid";
+      }
+    }
+
+    // Serialize metadata into notes column
+    const serializedNotes = JSON.stringify({
+      amount_paid: paid,
+      payment_status: finalStatus,
+      user_notes: notes || ""
+    });
 
     // 4. Save allocation record
     const { data, error } = await supabaseAdmin
@@ -90,7 +110,7 @@ const allocateVendor = async (req, res) => {
         booking_id: bookingId,
         vendor_id,
         assigned_amount: cost,
-        notes: notes || "",
+        notes: serializedNotes,
       }])
       .select()
       .single();
@@ -117,8 +137,9 @@ const allocateVendor = async (req, res) => {
     const responseData = data ? {
       ...data,
       allocated_cost: data.assigned_amount,
-      amount_paid: 0,
-      payment_status: "unpaid",
+      amount_paid: paid,
+      payment_status: finalStatus,
+      notes: notes || "",
       service_type: vendor.service_type || "other",
     } : null;
 
@@ -157,11 +178,48 @@ const updateAllocation = async (req, res) => {
     if (findError) return res.status(500).json({ message: findError.message });
     if (!existing) return res.status(404).json({ message: "Vendor allocation record not found" });
 
-    const updates = {};
-    if (allocated_cost !== undefined) updates.assigned_amount = Number(allocated_cost);
-    if (notes !== undefined) updates.notes = notes;
+    // Read existing notes to preserve values
+    let existingNotes = { amount_paid: 0, payment_status: "unpaid", user_notes: "" };
+    try {
+      if (existing.notes && existing.notes.startsWith("{")) {
+        const parsed = JSON.parse(existing.notes);
+        existingNotes.amount_paid = parsed.amount_paid || 0;
+        existingNotes.payment_status = parsed.payment_status || "unpaid";
+        existingNotes.user_notes = parsed.user_notes || "";
+      } else {
+        existingNotes.user_notes = existing.notes || "";
+      }
+    } catch (e) {
+      existingNotes.user_notes = existing.notes || "";
+    }
 
-    updates.updated_at = new Date().toISOString();
+    const cost = allocated_cost !== undefined ? Number(allocated_cost) : Number(existing.assigned_amount || 0);
+    const paid = amount_paid !== undefined ? Number(amount_paid) : Number(existingNotes.amount_paid || 0);
+
+    let finalStatus = payment_status;
+    if (finalStatus === undefined) {
+      if (allocated_cost !== undefined || amount_paid !== undefined) {
+        if (paid >= cost && cost > 0) {
+          finalStatus = "paid";
+        } else if (paid > 0) {
+          finalStatus = "partially_paid";
+        } else {
+          finalStatus = "unpaid";
+        }
+      } else {
+        finalStatus = existingNotes.payment_status;
+      }
+    }
+
+    const updates = {};
+    if (allocated_cost !== undefined) updates.assigned_amount = cost;
+    
+    const newNotes = {
+      amount_paid: paid,
+      payment_status: finalStatus,
+      user_notes: notes !== undefined ? notes : existingNotes.user_notes
+    };
+    updates.notes = JSON.stringify(newNotes);
 
     // 2. Perform update
     const { data, error } = await supabaseAdmin
@@ -189,8 +247,9 @@ const updateAllocation = async (req, res) => {
     const responseData = data ? {
       ...data,
       allocated_cost: data.assigned_amount,
-      amount_paid: 0,
-      payment_status: "unpaid",
+      amount_paid: newNotes.amount_paid,
+      payment_status: newNotes.payment_status,
+      notes: newNotes.user_notes,
     } : null;
 
     res.json({ message: "Vendor allocation updated successfully", data: responseData });
@@ -267,13 +326,30 @@ const getBookingVendors = async (req, res) => {
 
     if (error) return res.status(500).json({ message: error.message });
 
-    const mapped = (data || []).map(item => ({
-      ...item,
-      allocated_cost: item.assigned_amount,
-      amount_paid: 0,
-      payment_status: "unpaid",
-      service_type: item.vendors?.service_type || "other"
-    }));
+    const mapped = (data || []).map(item => {
+      let parsedNotes = { amount_paid: 0, payment_status: "unpaid", user_notes: "" };
+      try {
+        if (item.notes && item.notes.startsWith("{")) {
+          const parsed = JSON.parse(item.notes);
+          parsedNotes.amount_paid = parsed.amount_paid || 0;
+          parsedNotes.payment_status = parsed.payment_status || "unpaid";
+          parsedNotes.user_notes = parsed.user_notes || "";
+        } else {
+          parsedNotes.user_notes = item.notes || "";
+        }
+      } catch (e) {
+        parsedNotes.user_notes = item.notes || "";
+      }
+
+      return {
+        ...item,
+        allocated_cost: item.assigned_amount,
+        amount_paid: parsedNotes.amount_paid,
+        payment_status: parsedNotes.payment_status,
+        notes: parsedNotes.user_notes,
+        service_type: item.vendors?.service_type || "other"
+      };
+    });
 
     res.json(mapped);
   } catch (err) {
@@ -302,12 +378,29 @@ const getVendorAllocations = async (req, res) => {
 
     if (error) return res.status(500).json({ message: error.message });
 
-    const mapped = (data || []).map(item => ({
-      ...item,
-      allocated_cost: item.assigned_amount,
-      amount_paid: 0,
-      payment_status: "unpaid"
-    }));
+    const mapped = (data || []).map(item => {
+      let parsedNotes = { amount_paid: 0, payment_status: "unpaid", user_notes: "" };
+      try {
+        if (item.notes && item.notes.startsWith("{")) {
+          const parsed = JSON.parse(item.notes);
+          parsedNotes.amount_paid = parsed.amount_paid || 0;
+          parsedNotes.payment_status = parsed.payment_status || "unpaid";
+          parsedNotes.user_notes = parsed.user_notes || "";
+        } else {
+          parsedNotes.user_notes = item.notes || "";
+        }
+      } catch (e) {
+        parsedNotes.user_notes = item.notes || "";
+      }
+
+      return {
+        ...item,
+        allocated_cost: item.assigned_amount,
+        amount_paid: parsedNotes.amount_paid,
+        payment_status: parsedNotes.payment_status,
+        notes: parsedNotes.user_notes
+      };
+    });
 
     res.json(mapped);
   } catch (err) {
@@ -326,7 +419,7 @@ const getVendorAllocationStats = async (req, res) => {
 
     const { data, error } = await supabaseAdmin
       .from("booking_vendors")
-      .select("assigned_amount")
+      .select("assigned_amount, notes")
       .eq("vendor_id", id)
       .eq("hall_id", hall_id);
 
@@ -334,8 +427,18 @@ const getVendorAllocationStats = async (req, res) => {
 
     const total_bookings = data?.length || 0;
     const total_earnings = data?.reduce((sum, a) => sum + Number(a.assigned_amount || 0), 0) || 0;
-    const total_paid = 0;
-    const total_pending = total_earnings;
+    
+    let total_paid = 0;
+    (data || []).forEach(item => {
+      try {
+        if (item.notes && item.notes.startsWith("{")) {
+          const parsed = JSON.parse(item.notes);
+          total_paid += Number(parsed.amount_paid || 0);
+        }
+      } catch (e) {}
+    });
+
+    const total_pending = Math.max(0, total_earnings - total_paid);
 
     res.json({
       total_bookings,
