@@ -80,19 +80,7 @@ const allocateVendor = async (req, res) => {
       }
     }
 
-    // Deduce payment status
     const cost = Number(allocated_cost || 0);
-    const paid = Number(amount_paid || 0);
-    let finalStatus = payment_status || "unpaid";
-    if (payment_status === undefined) {
-      if (paid >= cost && cost > 0) {
-        finalStatus = "paid";
-      } else if (paid > 0) {
-        finalStatus = "partially_paid";
-      } else {
-        finalStatus = "unpaid";
-      }
-    }
 
     // 4. Save allocation record
     const { data, error } = await supabaseAdmin
@@ -101,10 +89,7 @@ const allocateVendor = async (req, res) => {
         hall_id,
         booking_id: bookingId,
         vendor_id,
-        service_type: service_type || vendor.service_type || "other",
-        allocated_cost: cost,
-        amount_paid: paid,
-        payment_status: finalStatus,
+        assigned_amount: cost,
         notes: notes || "",
       }])
       .select()
@@ -129,11 +114,19 @@ const allocateVendor = async (req, res) => {
       metadata: { vendor_id, booking_id: bookingId, cost, conflict },
     });
 
+    const responseData = data ? {
+      ...data,
+      allocated_cost: data.assigned_amount,
+      amount_paid: 0,
+      payment_status: "unpaid",
+      service_type: vendor.service_type || "other",
+    } : null;
+
     res.status(201).json({
       message: conflict 
         ? `Vendor allocated, but a scheduling conflict was detected: ${conflictMessage}`
         : "Vendor allocated to booking successfully",
-      data,
+      data: responseData,
       conflict,
       conflictMessage,
     });
@@ -165,24 +158,8 @@ const updateAllocation = async (req, res) => {
     if (!existing) return res.status(404).json({ message: "Vendor allocation record not found" });
 
     const updates = {};
-    if (allocated_cost !== undefined) updates.allocated_cost = Number(allocated_cost);
-    if (amount_paid !== undefined) updates.amount_paid = Number(amount_paid);
+    if (allocated_cost !== undefined) updates.assigned_amount = Number(allocated_cost);
     if (notes !== undefined) updates.notes = notes;
-
-    const cost = allocated_cost !== undefined ? Number(allocated_cost) : Number(existing.allocated_cost || 0);
-    const paid = amount_paid !== undefined ? Number(amount_paid) : Number(existing.amount_paid || 0);
-
-    if (payment_status !== undefined) {
-      updates.payment_status = payment_status;
-    } else if (allocated_cost !== undefined || amount_paid !== undefined) {
-      if (paid >= cost && cost > 0) {
-        updates.payment_status = "paid";
-      } else if (paid > 0) {
-        updates.payment_status = "partially_paid";
-      } else {
-        updates.payment_status = "unpaid";
-      }
-    }
 
     updates.updated_at = new Date().toISOString();
 
@@ -209,7 +186,14 @@ const updateAllocation = async (req, res) => {
       metadata: { booking_id: bookingId, vendor_id: vendorId, updates },
     });
 
-    res.json({ message: "Vendor allocation updated successfully", data });
+    const responseData = data ? {
+      ...data,
+      allocated_cost: data.assigned_amount,
+      amount_paid: 0,
+      payment_status: "unpaid",
+    } : null;
+
+    res.json({ message: "Vendor allocation updated successfully", data: responseData });
   } catch (err) {
     console.error("updateAllocation error:", err);
     res.status(500).json({ message: "Server error" });
@@ -282,7 +266,16 @@ const getBookingVendors = async (req, res) => {
       .eq("hall_id", hall_id);
 
     if (error) return res.status(500).json({ message: error.message });
-    res.json(data);
+
+    const mapped = (data || []).map(item => ({
+      ...item,
+      allocated_cost: item.assigned_amount,
+      amount_paid: 0,
+      payment_status: "unpaid",
+      service_type: item.vendors?.service_type || "other"
+    }));
+
+    res.json(mapped);
   } catch (err) {
     console.error("getBookingVendors error:", err);
     res.status(500).json({ message: "Server error" });
@@ -308,7 +301,15 @@ const getVendorAllocations = async (req, res) => {
       .order("created_at", { ascending: false });
 
     if (error) return res.status(500).json({ message: error.message });
-    res.json(data);
+
+    const mapped = (data || []).map(item => ({
+      ...item,
+      allocated_cost: item.assigned_amount,
+      amount_paid: 0,
+      payment_status: "unpaid"
+    }));
+
+    res.json(mapped);
   } catch (err) {
     console.error("getVendorAllocations error:", err);
     res.status(500).json({ message: "Server error" });
@@ -325,16 +326,16 @@ const getVendorAllocationStats = async (req, res) => {
 
     const { data, error } = await supabaseAdmin
       .from("booking_vendors")
-      .select("allocated_cost, amount_paid")
+      .select("assigned_amount")
       .eq("vendor_id", id)
       .eq("hall_id", hall_id);
 
     if (error) return res.status(500).json({ message: error.message });
 
     const total_bookings = data?.length || 0;
-    const total_earnings = data?.reduce((sum, a) => sum + Number(a.allocated_cost || 0), 0) || 0;
-    const total_paid = data?.reduce((sum, a) => sum + Number(a.amount_paid || 0), 0) || 0;
-    const total_pending = Math.max(0, total_earnings - total_paid);
+    const total_earnings = data?.reduce((sum, a) => sum + Number(a.assigned_amount || 0), 0) || 0;
+    const total_paid = 0;
+    const total_pending = total_earnings;
 
     res.json({
       total_bookings,
