@@ -41,7 +41,7 @@ const createStaff = async (req, res) => {
       permissions,
       notes,
     } = req.body;
-    const hall_id = req.user.hall_id;
+    const hall_id = req.user.hall_id === "all" ? req.user.primary_hall_id : req.user.hall_id;
 
     if (!name || !email || !password) {
       return res.status(400).json({ message: "name, email, and password are required" });
@@ -344,12 +344,22 @@ const updateStaff = async (req, res) => {
       return res.status(404).json({ message: "Staff not found" });
     }
 
-    // Verify staff belongs to the active hall (via user_halls link)
+    // Get all accessible hall IDs for the current user to verify ownership
+    const { data: ownerHalls, error: ownerHallsError } = await supabaseAdmin
+      .from("user_halls")
+      .select("hall_id")
+      .eq("user_id", req.user.id);
+
+    if (ownerHallsError) return res.status(500).json({ message: ownerHallsError.message });
+    const accessibleHallIds = (ownerHalls || []).map(h => h.hall_id);
+
+    // Verify staff belongs to any of the owner's accessible halls
     const { data: link, error: linkErr } = await supabaseAdmin
       .from("user_halls")
       .select("id")
       .eq("user_id", id)
-      .eq("hall_id", hall_id)
+      .in("hall_id", accessibleHallIds)
+      .limit(1)
       .maybeSingle();
 
     if (linkErr || !link) {
@@ -461,7 +471,7 @@ const updateStaff = async (req, res) => {
 
     // Log update activity
     await logActivity({
-      hall_id,
+      hall_id: hall_id === "all" ? (existing.hall_id || req.user.primary_hall_id) : hall_id,
       user_id: req.user.id,
       user_name: req.user.name,
       action: "staff.updated",
@@ -492,12 +502,22 @@ const deleteStaff = async (req, res) => {
     if (existError || !existing) return res.status(404).json({ message: "Staff not found" });
     if (existing.role === "owner") return res.status(403).json({ message: "Cannot delete hall owner" });
 
-    // Verify staff belongs to the active hall (via user_halls link)
+    // Get all accessible hall IDs for the current user to verify ownership
+    const { data: ownerHalls, error: ownerHallsError } = await supabaseAdmin
+      .from("user_halls")
+      .select("hall_id")
+      .eq("user_id", req.user.id);
+
+    if (ownerHallsError) return res.status(500).json({ message: ownerHallsError.message });
+    const accessibleHallIds = (ownerHalls || []).map(h => h.hall_id);
+
+    // Verify staff belongs to any of the owner's accessible halls
     const { data: link, error: linkErr } = await supabaseAdmin
       .from("user_halls")
       .select("id")
       .eq("user_id", id)
-      .eq("hall_id", hall_id)
+      .in("hall_id", accessibleHallIds)
+      .limit(1)
       .maybeSingle();
 
     if (linkErr || !link) return res.status(404).json({ message: "Staff not found in your hall" });
@@ -514,7 +534,7 @@ const deleteStaff = async (req, res) => {
 
     // Log delete activity
     await logActivity({
-      hall_id,
+      hall_id: hall_id === "all" ? (existing.hall_id || req.user.primary_hall_id) : hall_id,
       user_id: req.user.id,
       user_name: req.user.name,
       action: "staff.removed",
