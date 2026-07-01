@@ -33,6 +33,7 @@ const multiHallRoutes = require("./routes/multiHallRoutes");
 const supportRoutes = require("./routes/supportRoutes");
 const muhurthamRoutes = require("./routes/muhurthamRoutes");
 const ownerHallsRoutes = require("./routes/ownerHallsRoutes");
+const venuePricingRoutes = require("./routes/venuePricingRoutes");
 
 const app = express();
 
@@ -86,6 +87,7 @@ app.use("/multihall", multiHallRoutes);
 app.use("/support", supportRoutes);
 app.use("/muhurthams", muhurthamRoutes);
 app.use("/owner", ownerHallsRoutes);
+app.use("/venue-pricing-rules", venuePricingRoutes);
 
 // ---- Health check ----
 app.get("/health", (req, res) => {

@@ -38,7 +38,7 @@ const getMuhurthams = async (req, res) => {
    ============================================================ */
 const addMuhurtham = async (req, res) => {
   try {
-    const { date, title, notes } = req.body;
+    const { date, title, notes, festival, priority } = req.body;
 
     if (!date) {
       return res.status(400).json({ message: "date parameter is required" });
@@ -55,9 +55,18 @@ const addMuhurtham = async (req, res) => {
       return res.status(403).json({ message: "Forbidden: Super Admin access required" });
     }
 
+    let notesVal = notes;
+    if (festival || priority) {
+      notesVal = JSON.stringify({
+        notes: notes || "",
+        festival: festival || "",
+        priority: priority || "medium"
+      });
+    }
+
     const { data, error } = await supabaseAdmin
       .from("muhurtham_dates")
-      .insert([{ date, title: title || "Auspicious Muhurtham Date", notes }])
+      .insert([{ date, title: title || "Auspicious Muhurtham Date", notes: notesVal }])
       .select()
       .single();
 

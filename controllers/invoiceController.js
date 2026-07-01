@@ -69,7 +69,7 @@ const createInvoice = async (req, res) => {
       .from("bookings")
       .select(`
         *,
-        customers ( id, customer_name, phone, email, address ),
+        customers ( id, customer_name, phone, email, address, state ),
         payments ( id, amount, payment_method, payment_date )
       `)
       .eq("id", booking_id)
@@ -85,7 +85,7 @@ const createInvoice = async (req, res) => {
     const settings = await getSettingsForHall(hall_id);
     const { data: hallProfile } = await supabaseAdmin
       .from("hall_profiles")
-      .select("hall_name, phone, email, address, city, logo_url, gstin")
+      .select("hall_name, phone, email, address, city, state, logo_url, gstin")
       .eq("hall_id", hall_id)
       .maybeSingle();
 
@@ -102,11 +102,29 @@ const createInvoice = async (req, res) => {
       ? booking.tax_enabled
       : settings.tax_enabled;
 
-    const tax_percentage = booking.tax_percentage !== null && booking.tax_percentage !== undefined
+    let tax_percentage = booking.tax_percentage !== null && booking.tax_percentage !== undefined
       ? Number(booking.tax_percentage)
       : settings.tax_percentage;
 
-    const tax_label = booking.tax_label || settings.tax_label || "GST";
+    let isDefaultRate = false;
+    if (tax_enabled && (!tax_percentage || isNaN(tax_percentage) || Number(tax_percentage) === 0)) {
+      tax_percentage = 18.00;
+      isDefaultRate = true;
+    }
+
+    // Determine states to verify IGST vs CGST/SGST
+    const hallState = (hallProfile?.state || "").trim().toLowerCase();
+    const customerState = (booking.customers?.state || "").trim().toLowerCase();
+
+    let tax_label = booking.tax_label || settings.tax_label || "GST";
+    if (tax_enabled) {
+      if (hallState && customerState && hallState !== customerState) {
+        tax_label = `IGST (${tax_percentage}%)`;
+      } else {
+        const half = tax_percentage / 2;
+        tax_label = `CGST (${half}%) + SGST (${half}%)`;
+      }
+    }
 
     const subtotal = booking.subtotal !== null && booking.subtotal !== undefined
       ? Number(booking.subtotal)
@@ -133,6 +151,12 @@ const createInvoice = async (req, res) => {
     // Amount paid so far
     const amount_paid = (booking.payments || []).reduce((s, p) => s + (p.amount || 0), 0);
     const balance_due = total_amount - amount_paid;
+
+    let finalNotes = notes || settings.invoice_footer_note;
+    if (tax_enabled && isDefaultRate) {
+      const warningMsg = "Using default GST rate because no custom GST configuration was found.";
+      finalNotes = finalNotes ? `${warningMsg}\n\n${finalNotes}` : warningMsg;
+    }
 
     const invoiceData = {
       hall_id,
@@ -178,7 +202,7 @@ const createInvoice = async (req, res) => {
       currency_symbol: settings.currency_symbol,
 
       // Meta
-      notes: notes || settings.invoice_footer_note,
+      notes: finalNotes,
       status: balance_due <= 0 ? "paid" : "unpaid",
     };
 
@@ -214,7 +238,15 @@ const getInvoiceById = async (req, res) => {
 
     if (error) return res.status(404).json({ message: "Invoice not found" });
 
-    res.json(data);
+    // Fetch UPI ID from hall profile
+    const { data: profile } = await supabaseAdmin
+      .from("hall_profiles")
+      .select("upi_id")
+      .eq("hall_id", hall_id)
+      .maybeSingle();
+
+    const invoiceWithUpi = { ...data, hall_upi_id: profile?.upi_id || "" };
+    res.json(invoiceWithUpi);
   } catch (err) {
     console.error("getInvoiceById error:", err);
     res.status(500).json({ message: "Server error" });
@@ -239,7 +271,15 @@ const getInvoiceByBooking = async (req, res) => {
     if (error) return res.status(500).json({ message: error.message });
     if (!data) return res.status(404).json({ message: "No invoice found for this booking" });
 
-    res.json(data);
+    // Fetch UPI ID from hall profile
+    const { data: profile } = await supabaseAdmin
+      .from("hall_profiles")
+      .select("upi_id")
+      .eq("hall_id", hall_id)
+      .maybeSingle();
+
+    const invoiceWithUpi = { ...data, hall_upi_id: profile?.upi_id || "" };
+    res.json(invoiceWithUpi);
   } catch (err) {
     console.error("getInvoiceByBooking error:", err);
     res.status(500).json({ message: "Server error" });
