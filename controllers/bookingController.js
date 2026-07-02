@@ -1,6 +1,7 @@
 const { supabaseAdmin } = require("../config/supabase");
 const { logActivity } = require("./activityLogController");
 const { getLocalDate } = require("../utils/dateHelper");
+const { evictCachedPdf } = require("./invoiceController");
 
 /* ============================================================
    AVAILABILITY CHECK (reusable helper)
@@ -520,6 +521,9 @@ const updateBooking = async (req, res) => {
             updated_at: new Date().toISOString()
           })
           .eq("booking_id", id);
+
+        // Evict PDF cache to reflect updated totals
+        await evictCachedPdf(`invoices/${invoice.id}.pdf`);
       }
     } catch (syncErr) {
       console.error("Error syncing invoice on booking update:", syncErr);

@@ -1,6 +1,7 @@
 const { supabaseAdmin } = require("../config/supabase");
 const { logActivity } = require("./activityLogController");
 const { getLocalDate } = require("../utils/dateHelper");
+const { syncInvoiceAndEvictCache } = require("./invoiceController");
 
 /* ============================================================
    ADD PAYMENT
@@ -64,6 +65,9 @@ const createPayment = async (req, res) => {
         .update({ status: "completed" })
         .eq("id", booking_id);
     }
+
+    // Sync invoice totals and status, and evict the cached PDF from storage
+    await syncInvoiceAndEvictCache(booking_id, hall_id);
 
     res.status(201).json({
       message: "Payment recorded successfully",
@@ -214,6 +218,9 @@ const deletePayment = async (req, res) => {
           .eq("id", existing.booking_id);
       }
     }
+
+    // Sync invoice totals and status, and evict the cached PDF from storage
+    await syncInvoiceAndEvictCache(existing.booking_id, hall_id);
 
     res.json({ message: "Payment deleted successfully" });
 
