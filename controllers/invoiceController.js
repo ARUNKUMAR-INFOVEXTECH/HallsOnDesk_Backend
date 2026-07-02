@@ -14,10 +14,7 @@ const getBrowserInstance = async () => {
     args: [
       "--no-sandbox",
       "--disable-setuid-sandbox",
-      "--disable-dev-shm-usage",
-      "--disable-gpu",
-      "--single-process",
-      "--no-zygote"
+      "--disable-dev-shm-usage"
     ]
   });
   return globalBrowser;
@@ -70,7 +67,11 @@ const renderHtmlToPdf = async (html, metadata = {}) => {
     return pdfBuffer;
   } finally {
     if (page) {
-      await page.close();
+      try {
+        await page.close();
+      } catch (err) {
+        console.error("Puppeteer page close error (ignored):", err.message);
+      }
     }
   }
 };
